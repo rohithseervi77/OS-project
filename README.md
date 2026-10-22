@@ -9,6 +9,14 @@
 
 ---
 
+## 🚀 Live Cloud Deployment
+
+Deploy your own live cloud instance of **KERNEL//LAB** in 30 seconds:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Frohithseervi77%2FOS-project)
+
+---
+
 ## Overview
 
 **KERNEL//LAB** is an engineering-grade Operating Systems CPU scheduling simulator. Unlike static educational demos, every decision, prediction, Gantt segment, and performance metric is computed from an active, deterministic discrete-event simulation engine with zero hardcoded results.
