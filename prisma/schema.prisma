@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Simulation {
+  id          String   @id @default(uuid())
+  title       String
+  scenario    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  runs        SchedulingRun[]
+}
+
+model SchedulingRun {
+  id             String      @id @default(uuid())
+  simulationId   String
+  simulation     Simulation  @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  algorithm      String
+  quantum        Int?
+  totalTime      Int
+  avgWait        Float
+  avgTat         Float
+  avgRt          Float
+  cpuUtil        Float
+  fairness       Float
+  contextSwitches Int
+  score          Float?
+  createdAt      DateTime    @default(now())
+}
