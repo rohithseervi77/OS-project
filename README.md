@@ -9,7 +9,11 @@
 
 ---
 
-## 🚀 Live Cloud Deployment
+## 🚀 Live Deployment Links
+
+- **Direct Live Web Application**: [https://rohithseervi77.github.io/OS-project/](https://rohithseervi77.github.io/OS-project/)
+- **Live Tunnel Preview**: [https://fresh-crabs-float.loca.lt](https://fresh-crabs-float.loca.lt)
+- **GitHub Repository**: [https://github.com/rohithseervi77/OS-project](https://github.com/rohithseervi77/OS-project)
 
 Deploy your own live cloud instance of **KERNEL//LAB** in 30 seconds:
 
