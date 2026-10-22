@@ -78,6 +78,14 @@ All classical algorithms run on the **identical process dataset snapshot**:
 - Matrix comparing all policies across Waiting Time, Response Time, Turnaround Time, CPU Utilization, Jain's Fairness, Context Switches, and Score.
 - Side-by-side comparative diffs showing exact calculated percentage improvements over fixed Round Robin ($\downarrow \text{WT}\%$, $\downarrow \text{RT}\%$, $\uparrow \text{Fairness}\%$).
 
+### 7. Research Mode (`/research`)
+- Empirical batch simulation lab across multiple workload seeds and configurable process counts (5–30).
+- Multi-run epoch statistical averaging and instant CSV dataset export.
+
+### 8. Algorithm Lab (`/algorithms`)
+- Deep technical taxonomy of FCFS, SJF, SRTF, RR, Priority, MLFQ, and Smart Scheduler.
+- Visual execution sequence example with standardized workload ($P_1=8\text{ms}, P_2=3\text{ms}, P_3=5\text{ms}, P_4=2\text{ms}$).
+
 ---
 
 ## Verification & Unit Testing

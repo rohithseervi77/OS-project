@@ -4,65 +4,94 @@ import React, { useState, useEffect } from 'react';
 import { Process } from '../../lib/types';
 import { generateProcesses } from '../../lib/workload/generator';
 import { analyzeBurstHistory, DetailedProcessPrediction } from '../../lib/prediction/history';
-import { Activity, Sliders, ArrowRight, Play, Cpu, TrendingUp } from 'lucide-react';
-import Link from 'next/link';
+import { 
+  ResponsiveContainer, 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  CartesianGrid, 
+  Legend 
+} from 'recharts';
+import { Play, RotateCcw, Cpu, Activity, Sliders } from 'lucide-react';
 
 export default function PredictionsPage() {
   const [processes, setProcesses] = useState<Process[]>([]);
   const [selectedPid, setSelectedPid] = useState<string>('P1');
   const [alpha, setAlpha] = useState<number>(0.5);
 
-  const [customInput, setCustomInput] = useState<string>('5, 7, 6, 8, 9');
-  const [customResult, setCustomResult] = useState<DetailedProcessPrediction | null>(null);
+  // Interactive Testbench state
+  const [testbenchInput, setTestbenchInput] = useState<string>('5, 7, 6, 8, 9, 12, 14');
+  const [testbenchResult, setTestbenchResult] = useState<DetailedProcessPrediction | null>(null);
 
   useEffect(() => {
     const procs = generateProcesses({ count: 10, seed: 42, scenario: 'MIXED' });
     setProcesses(procs);
     setSelectedPid(procs[0]?.pid || 'P1');
+    runTestbench('5, 7, 6, 8, 9, 12, 14', 0.5);
   }, []);
 
-  useEffect(() => {
-    const numbers = customInput
+  const runTestbench = (inputStr: string, currentAlpha: number) => {
+    const numbers = inputStr
       .split(',')
       .map(s => Number(s.trim()))
       .filter(n => !isNaN(n) && n > 0);
     if (numbers.length > 0) {
-      setCustomResult(analyzeBurstHistory(numbers, alpha));
+      setTestbenchResult(analyzeBurstHistory(numbers, currentAlpha));
     }
-  }, [customInput, alpha]);
+  };
 
+  const handleAlphaChange = (newAlpha: number) => {
+    setAlpha(newAlpha);
+    runTestbench(testbenchInput, newAlpha);
+  };
+
+  const handleRunTestbench = (e: React.FormEvent) => {
+    e.preventDefault();
+    runTestbench(testbenchInput, alpha);
+  };
+
+  // Selected process analysis
   const selectedProcess = processes.find(p => p.pid === selectedPid) || processes[0];
   const processAnalysis = selectedProcess 
     ? analyzeBurstHistory(selectedProcess.burstHistory, alpha) 
     : null;
 
+  // Active chart data: testbench result
+  const chartData = testbenchResult ? testbenchResult.steps.map((step) => ({
+    sequence: `n=${step.step}`,
+    actual: step.actual,
+    predicted: step.predicted,
+  })) : [];
+
   return (
-    <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 font-mono text-xs space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-[#1c2230] gap-3">
+    <div className="mx-auto max-w-7xl px-3 sm:px-6 py-5 font-mono text-xs space-y-5">
+      {/* Header (Section 12) */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#21262d] gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-amber-400" />
-            <h1 className="text-xl font-bold text-white uppercase tracking-wider">
-              BURST PREDICTOR // STATISTICAL ESTIMATION UNIT
+            <div className="h-2 w-2 rounded-none bg-amber-500" />
+            <h1 className="text-base font-bold text-[#f3f4f6] uppercase tracking-wider">
+              BURST LAB // MATHEMATICAL PREDICTION WORKSTATION
             </h1>
           </div>
-          <p className="text-xs text-[#8e99b0] mt-1 font-sans">
-            Mathematical Exponential Averaging: &tau;(n+1) = &alpha;&middot;t(n) + (1&minus;&alpha;)&middot;&tau;(n). Error calculation and confidence classification.
+          <p className="text-xs text-[#8b949e] mt-0.5 font-sans">
+            Exponential smoothing algorithm for future CPU burst estimation and empirical error tracking.
           </p>
         </div>
 
-        {/* Smoothing Factor Selector */}
-        <div className="flex items-center gap-2 bg-[#0c0e14] border border-[#1e2330] p-1.5 rounded-sm">
-          <span className="text-[10px] text-[#636d85] px-1 uppercase">FACTOR &alpha;:</span>
+        {/* Smoothing Factor Alpha Selector */}
+        <div className="flex items-center gap-2 bg-[#13171d] border border-[#21262d] p-1.5">
+          <span className="text-[10px] text-[#6e7681] px-1 uppercase font-bold">SMOOTHING FACTOR α:</span>
           {[0.1, 0.2, 0.3, 0.5, 0.7, 0.9].map((a) => (
             <button
               key={a}
-              onClick={() => setAlpha(a)}
-              className={`px-2 py-0.5 rounded-sm font-bold transition-colors ${
+              onClick={() => handleAlphaChange(a)}
+              className={`px-2 py-0.5 font-bold transition-colors ${
                 alpha === a
                   ? 'bg-amber-500 text-black'
-                  : 'text-[#8e99b0] hover:text-white bg-[#10131a]'
+                  : 'text-[#8b949e] hover:text-[#f3f4f6] bg-[#0d0f12] border border-[#21262d]'
               }`}
             >
               {a}
@@ -71,221 +100,179 @@ export default function PredictionsPage() {
         </div>
       </div>
 
-      {/* Mathematical Specification Bar */}
+      {/* Formula Specification Tiles */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="p-3 bg-[#0c0e14] border border-[#1e2330] rounded-sm">
-          <span className="text-[9px] text-[#636d85] uppercase block">PREDICTION FORMULA</span>
-          <span className="text-sm font-bold text-white mt-1 block font-mono">
-            &tau;(n+1) = &alpha;&middot;t(n) + (1&minus;&alpha;)&middot;&tau;(n)
+        <div className="p-3 bg-[#13171d] border border-[#21262d] space-y-1">
+          <span className="text-[9px] text-[#6e7681] uppercase font-bold block">EXPONENTIAL AVERAGING FORMULA</span>
+          <span className="text-sm font-bold text-[#f3f4f6] block font-mono">
+            τ(n+1) = α·t(n) + (1−α)·τ(n)
           </span>
-          <span className="text-[10px] text-[#636d85] mt-1 block">
-            &tau;(n+1): Next estimate | t(n): Actual burst | &tau;(n): Prior estimate
-          </span>
-        </div>
-
-        <div className="p-3 bg-[#0c0e14] border border-[#1e2330] rounded-sm">
-          <span className="text-[9px] text-[#636d85] uppercase block">PREDICTION ERROR FORMULA</span>
-          <span className="text-sm font-bold text-rose-400 mt-1 block font-mono">
-            error = |actual &minus; predicted| / actual &times; 100
-          </span>
-          <span className="text-[10px] text-[#636d85] mt-1 block">
-            Computes percentage divergence from hardware execution
+          <span className="text-[9px] text-[#8b949e] block font-mono">
+            τ(n+1): Next burst | t(n): Actual burst | τ(n): Prior estimate
           </span>
         </div>
 
-        <div className="p-3 bg-[#0c0e14] border border-[#1e2330] rounded-sm">
-          <span className="text-[9px] text-[#636d85] uppercase block">CONFIDENCE MODEL</span>
-          <span className="text-sm font-bold text-emerald-400 mt-1 block font-mono">
-            confidence = max(0, 100 &minus; error)
+        <div className="p-3 bg-[#13171d] border border-[#21262d] space-y-1">
+          <span className="text-[9px] text-[#6e7681] uppercase font-bold block">PERCENTAGE ERROR MEASUREMENT</span>
+          <span className="text-sm font-bold text-rose-400 block font-mono">
+            Error = |t(n) − τ(n)| / t(n) × 100
           </span>
-          <span className="text-[10px] text-[#636d85] mt-1 block">
-            HIGH (&ge;80%) &bull; MEDIUM (50-79%) &bull; LOW (&lt;50%)
+          <span className="text-[9px] text-[#8b949e] block font-mono">
+            Divergence between predicted estimate and physical execution
+          </span>
+        </div>
+
+        <div className="p-3 bg-[#13171d] border border-[#21262d] space-y-1">
+          <span className="text-[9px] text-[#6e7681] uppercase font-bold block">CONFIDENCE METRIC</span>
+          <span className="text-sm font-bold text-emerald-400 block font-mono">
+            Confidence = max(0, 100 − Error)
+          </span>
+          <span className="text-[9px] text-[#8b949e] block font-mono">
+            Standard mathematical reliability measurement
           </span>
         </div>
       </div>
 
-      {/* Main Process Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Process Selector (4 cols) */}
-        <div className="lg:col-span-4 rounded-sm border border-[#1e2330] bg-[#0c0e14] p-3 shadow-xl space-y-2">
-          <span className="text-[10px] text-[#636d85] uppercase tracking-wider block font-bold mb-2">
-            SELECT PROCESS ENTRY
-          </span>
+      {/* Interactive Prediction Testbench (Section 13) */}
+      <div className="bg-[#13171d] border border-[#21262d] p-4 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#21262d] pb-3 gap-2">
+          <div>
+            <span className="font-bold text-[#f3f4f6] uppercase tracking-wider text-xs block">
+              INTERACTIVE PREDICTION TESTBENCH
+            </span>
+            <span className="text-[10px] text-[#8b949e]">
+              ENTER ARBITRARY BURST SEQUENCE TO RUN MATHEMATICAL RECURSION
+            </span>
+          </div>
 
-          <div className="space-y-1.5 max-h-[440px] overflow-y-auto pr-1">
-            {processes.map((p) => {
-              const isSelected = p.pid === selectedPid;
-              return (
-                <div
-                  key={p.pid}
-                  onClick={() => setSelectedPid(p.pid)}
-                  className={`p-2.5 rounded-sm border cursor-pointer transition-all flex items-center justify-between ${
-                    isSelected
-                      ? 'bg-[#141822] border-amber-500 shadow-md ring-1 ring-amber-500/40'
-                      : 'bg-[#090b0f] border-[#181c26] hover:border-[#283042]'
-                  }`}
-                >
-                  <div>
-                    <span className="font-bold text-white block">{p.pid} ({p.processType})</span>
-                    <span className="text-[10px] text-[#636d85]">
-                      BURST: {p.burstTime}ms | PRED: {p.predictedBurst}ms
-                    </span>
-                  </div>
+          <form onSubmit={handleRunTestbench} className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              type="text"
+              value={testbenchInput}
+              onChange={(e) => setTestbenchInput(e.target.value)}
+              placeholder="e.g. 5, 7, 6, 8, 9, 12, 14"
+              className="bg-[#0d0f12] border border-[#21262d] px-2.5 py-1 text-white font-mono text-xs w-full sm:w-64"
+            />
+            <button
+              type="submit"
+              className="px-3.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase transition-colors shrink-0"
+            >
+              RUN TESTBENCH
+            </button>
+          </form>
+        </div>
 
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm ${
-                    (p.confidence || 0) >= 80 ? 'text-emerald-400 bg-emerald-950/30' : (p.confidence || 0) >= 50 ? 'text-amber-400 bg-amber-950/30' : 'text-rose-400 bg-rose-950/30'
-                  }`}>
-                    {p.confidence}%
-                  </span>
-                </div>
-              );
-            })}
+        {/* Telemetry Metrics for Testbench */}
+        {testbenchResult && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[10px]">
+            <div className="p-2.5 bg-[#0d0f12] border border-[#21262d]">
+              <span className="text-[#6e7681] block uppercase text-[9px]">NEXT PREDICTION τ(n+1)</span>
+              <span className="text-base font-bold text-[#38bdf8]">{testbenchResult.nextPrediction} ms</span>
+            </div>
+
+            <div className="p-2.5 bg-[#0d0f12] border border-[#21262d]">
+              <span className="text-[#6e7681] block uppercase text-[9px]">PREDICTION ERROR</span>
+              <span className="text-base font-bold text-rose-400">{testbenchResult.overallMeanError}%</span>
+            </div>
+
+            <div className="p-2.5 bg-[#0d0f12] border border-[#21262d]">
+              <span className="text-[#6e7681] block uppercase text-[9px]">MEASURED CONFIDENCE</span>
+              <span className="text-base font-bold text-emerald-400">{testbenchResult.overallConfidence}%</span>
+            </div>
+
+            <div className="p-2.5 bg-[#0d0f12] border border-[#21262d]">
+              <span className="text-[#6e7681] block uppercase text-[9px]">BURSTS EVALUATED</span>
+              <span className="text-base font-bold text-amber-400">{testbenchResult.steps.length} samples</span>
+            </div>
+          </div>
+        )}
+
+        {/* Visual Graph: ACTUAL vs PREDICTED */}
+        <div className="border border-[#21262d] bg-[#0d0f12] p-3 space-y-2">
+          <div className="flex items-center justify-between text-[10px] text-[#8b949e] border-b border-[#1c2128] pb-1">
+            <span>BURST TIME (MS) VS EXECUTION SEQUENCE</span>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-amber-400">
+                <span className="h-2 w-2 bg-amber-400 inline-block" /> ACTUAL BURST t(n)
+              </span>
+              <span className="flex items-center gap-1 text-[#38bdf8]">
+                <span className="h-2 w-2 bg-[#38bdf8] inline-block" /> PREDICTED BURST τ(n)
+              </span>
+            </div>
+          </div>
+
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 2" stroke="#1f2530" />
+                <XAxis dataKey="sequence" stroke="#6e7681" tick={{ fontSize: 10, fill: '#8b949e' }} />
+                <YAxis stroke="#6e7681" tick={{ fontSize: 10, fill: '#8b949e' }} domain={['auto', 'auto']} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#13171d', borderColor: '#30363d', fontSize: '11px', fontFamily: 'monospace' }}
+                  itemStyle={{ color: '#f3f4f6' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="actual"
+                  name="Actual Burst t(n)"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: '#f59e0b' }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="predicted"
+                  name="Predicted τ(n)"
+                  stroke="#38bdf8"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  dot={{ r: 3, fill: '#38bdf8' }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Right Detailed Prediction Telemetry (8 cols) */}
-        <div className="lg:col-span-8 rounded-sm border border-[#1e2330] bg-[#0c0e14] p-5 shadow-xl space-y-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#181c26] gap-2">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white uppercase tracking-wider">
-                  BURST TELEMETRY: {selectedPid}
-                </span>
-                <span className="text-[10px] text-amber-400 font-bold uppercase">&bull; &alpha; = {alpha}</span>
-              </div>
-              <span className="text-[10px] text-[#636d85]">
-                HISTORICAL SEQUENCE REGRESSION ANALYSIS
-              </span>
+        {/* Step-by-Step Mathematical Trace Table */}
+        {testbenchResult && (
+          <div className="border border-[#21262d] bg-[#0d0f12] overflow-x-auto">
+            <div className="p-2 border-b border-[#21262d] bg-[#0e1116] text-[10px] text-[#8b949e] font-bold uppercase">
+              MATHEMATICAL TRACE // EXECUTION SEQUENCE TABLE
             </div>
-
-            {processAnalysis && (
-              <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold border uppercase tracking-wider ${
-                processAnalysis.overallConfidence >= 80
-                  ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/40'
-                  : processAnalysis.overallConfidence >= 50
-                  ? 'bg-amber-950/40 text-amber-400 border-amber-500/40'
-                  : 'bg-rose-950/40 text-rose-400 border-rose-500/40'
-              }`}>
-                {processAnalysis.overallLevel} CONFIDENCE ({processAnalysis.overallConfidence}%)
-              </span>
-            )}
-          </div>
-
-          {/* KPI Strip */}
-          {processAnalysis && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 bg-[#090b0f] border border-[#181c26] rounded-sm">
-                <span className="text-[9px] text-[#636d85] uppercase block">PREDICTED NEXT &tau;</span>
-                <span className="text-base font-bold text-[#38bdf8] mt-0.5 block">{processAnalysis.nextPrediction} ms</span>
-              </div>
-
-              <div className="p-3 bg-[#090b0f] border border-[#181c26] rounded-sm">
-                <span className="text-[9px] text-[#636d85] uppercase block">MEAN ERROR</span>
-                <span className="text-base font-bold text-rose-400 mt-0.5 block">{processAnalysis.overallMeanError}%</span>
-              </div>
-
-              <div className="p-3 bg-[#090b0f] border border-[#181c26] rounded-sm">
-                <span className="text-[9px] text-[#636d85] uppercase block">BURST VARIANCE</span>
-                <span className="text-base font-bold text-amber-400 mt-0.5 block">{processAnalysis.burstVariance} ms²</span>
-              </div>
-
-              <div className="p-3 bg-[#090b0f] border border-[#181c26] rounded-sm">
-                <span className="text-[9px] text-[#636d85] uppercase block">VOLATILITY STATUS</span>
-                <span className={`text-base font-bold mt-0.5 block ${processAnalysis.isVolatile ? 'text-rose-400' : 'text-emerald-400'}`}>
-                  {processAnalysis.isVolatile ? 'VOLATILE' : 'STABLE'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Sequential Step Progression Table */}
-          {processAnalysis && (
-            <div className="space-y-2">
-              <span className="text-[10px] text-[#636d85] uppercase tracking-wider block font-bold">
-                BURST PROGRESSION STEP TABLE
-              </span>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[11px] border-collapse font-mono">
-                  <thead>
-                    <tr className="border-b border-[#1c2230] text-[#636d85] uppercase text-[9px]">
-                      <th className="py-1.5 px-2">STEP</th>
-                      <th className="py-1.5 px-2">ACTUAL t(n)</th>
-                      <th className="py-1.5 px-2">PREDICTED &tau;(n)</th>
-                      <th className="py-1.5 px-2">ERROR</th>
-                      <th className="py-1.5 px-2">CONFIDENCE</th>
-                      <th className="py-1.5 px-2 text-right">RATING</th>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-[#21262d] bg-[#0a0c0e] text-[#6e7681] text-[9px] uppercase font-bold">
+                  <th className="py-2 px-3">STEP (n)</th>
+                  <th className="py-2 px-3">PREV PREDICTION τ(n)</th>
+                  <th className="py-2 px-3">ACTUAL BURST t(n)</th>
+                  <th className="py-2 px-3">NEW PREDICTION τ(n+1)</th>
+                  <th className="py-2 px-3">ABS ERROR |t - τ|</th>
+                  <th className="py-2 px-3">PERCENT ERROR</th>
+                  <th className="py-2 px-3 text-right">CONFIDENCE</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1c2128] font-mono text-[10px]">
+                {testbenchResult.steps.map((h, i) => {
+                  const nextEst = i < testbenchResult.steps.length - 1 
+                    ? `${testbenchResult.steps[i + 1].predicted} ms` 
+                    : `${testbenchResult.nextPrediction} ms`;
+                  const absErr = Math.abs(h.actual - h.predicted).toFixed(2);
+                  return (
+                    <tr key={i} className="hover:bg-[#161b22]">
+                      <td className="py-2 px-3 text-amber-400 font-bold">#{h.step}</td>
+                      <td className="py-2 px-3 text-[#c9d1d9]">{h.predicted} ms</td>
+                      <td className="py-2 px-3 text-[#f3f4f6] font-bold">{h.actual} ms</td>
+                      <td className="py-2 px-3 text-[#38bdf8] font-bold">{nextEst}</td>
+                      <td className="py-2 px-3 text-white">{absErr} ms</td>
+                      <td className="py-2 px-3 text-rose-400">{h.error}%</td>
+                      <td className="py-2 px-3 text-right text-emerald-400 font-bold">{h.confidence}%</td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#151922]">
-                    {processAnalysis.steps.map((s) => (
-                      <tr key={s.step} className="hover:bg-[#121620]">
-                        <td className="py-1.5 px-2 text-[#8e99b0]">STEP #{s.step}</td>
-                        <td className="py-1.5 px-2 text-white font-bold">{s.actual} ms</td>
-                        <td className="py-1.5 px-2 text-[#38bdf8] font-bold">{s.predicted} ms</td>
-                        <td className="py-1.5 px-2 text-rose-400">{s.error}%</td>
-                        <td className="py-1.5 px-2 text-emerald-400 font-bold">{s.confidence}%</td>
-                        <td className="py-1.5 px-2 text-right">
-                          <span className={`px-1.5 py-0.2 rounded-sm text-[9px] uppercase border ${
-                            s.level === 'HIGH' ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/40' : s.level === 'MEDIUM' ? 'bg-amber-950/30 text-amber-400 border-amber-500/40' : 'bg-rose-950/30 text-rose-400 border-rose-500/40'
-                          }`}>
-                            {s.level}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Interactive Sandbox */}
-      <div className="rounded-sm border border-[#1e2330] bg-[#0c0e14] p-4 shadow-xl space-y-3">
-        <span className="text-[10px] text-[#636d85] uppercase tracking-wider block font-bold">
-          INTERACTIVE MATHEMATICAL PREDICTION TESTBENCH
-        </span>
-
-        <p className="text-[#8e99b0] text-[11px] font-sans">
-          Feed any raw sequence of observed execution bursts into the smoothing pipeline to evaluate responsiveness to spikes.
-        </p>
-
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
-            className="flex-1 rounded-sm bg-[#090b0f] border border-[#1d222f] px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
-            placeholder="e.g. 5, 7, 6, 8, 9, 12, 14"
-          />
-          <button
-            onClick={() => setCustomInput('10, 10, 10, 30, 30, 10')}
-            className="px-3 py-1.5 rounded-sm bg-[#151923] hover:bg-[#1e2332] text-amber-400 border border-[#242b3b] font-bold uppercase whitespace-nowrap"
-          >
-            LOAD SUDDEN SPIKE TEST
-          </button>
-        </div>
-
-        {customResult && (
-          <div className="p-3 rounded-sm bg-[#090b0f] border border-[#181c26] flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div>
-              <span className="text-[9px] text-[#636d85] uppercase block">PREDICTED NEXT BURST</span>
-              <span className="text-xl font-black text-[#38bdf8] font-mono">{customResult.nextPrediction} ms</span>
-            </div>
-            <div>
-              <span className="text-[9px] text-[#636d85] uppercase block">MEAN DEVIATION ERROR</span>
-              <span className="text-base font-bold text-rose-400 font-mono">{customResult.overallMeanError}%</span>
-            </div>
-            <div>
-              <span className="text-[9px] text-[#636d85] uppercase block">STATISTICAL CONFIDENCE</span>
-              <span className="text-base font-bold text-emerald-400 font-mono">{customResult.overallConfidence}% ({customResult.overallLevel})</span>
-            </div>
-            <div>
-              <span className="text-[9px] text-[#636d85] uppercase block">BURST VARIANCE</span>
-              <span className="text-base font-bold text-amber-400 font-mono">{customResult.burstVariance} ms²</span>
-            </div>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

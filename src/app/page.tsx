@@ -1,66 +1,173 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
+  Play, 
+  Pause, 
+  RotateCcw, 
+  SkipForward, 
+  ArrowRight,
   Cpu, 
-  Terminal, 
-  ArrowRight, 
-  Activity, 
-  Clock, 
   Layers, 
-  GitBranch, 
-  ShieldAlert, 
+  Activity, 
+  Terminal,
   Sliders,
-  Play
+  Check
 } from 'lucide-react';
+import { Process, PCB, AlgorithmType, SmartDecision, WorkloadCharacteristics } from '../lib/types';
+import { generateProcesses } from '../lib/workload/generator';
+import { createPCB } from '../lib/pcb';
+import { evaluateSmartScheduler } from '../lib/scheduler/smartScheduler';
+import { analyzeWorkload } from '../lib/workload/analyzer';
+import { DiscreteEventSimulationEngine } from '../lib/simulation/engine';
+import { SimulationEvent } from '../lib/simulation/events';
+import CPUVisualizer from '../components/CPUVisualizer';
+import GanttChart from '../components/GanttChart';
+import ReadyQueue from '../components/ReadyQueue';
+import SystemEventStream from '../components/SystemEventStream';
+import DecisionPanel from '../components/DecisionPanel';
+import PCBModal from '../components/PCBModal';
 
 export default function HomePage() {
+  const [processes, setProcesses] = useState<Process[]>([]);
+  const [smartDecision, setSmartDecision] = useState<SmartDecision | null>(null);
+  const [workload, setWorkload] = useState<WorkloadCharacteristics | null>(null);
+
+  // Live simulation states
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [currentRunning, setCurrentRunning] = useState<PCB | null>(null);
+  const [readyQueue, setReadyQueue] = useState<PCB[]>([]);
+  const [gantt, setGantt] = useState<any[]>([]);
+  const [events, setEvents] = useState<SimulationEvent[]>([]);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [inspectPCB, setInspectPCB] = useState<PCB | null>(null);
+
+  const engineRef = useRef<DiscreteEventSimulationEngine | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    loadLiveWorkload();
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  const loadLiveWorkload = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsPlaying(false);
+
+    const procs = generateProcesses({ count: 8, seed: 42, scenario: 'MIXED' });
+    setProcesses(procs);
+    const wl = analyzeWorkload(procs);
+    setWorkload(wl);
+    const evaluation = evaluateSmartScheduler(procs);
+    setSmartDecision(evaluation.decision);
+
+    const engine = new DiscreteEventSimulationEngine(procs, {
+      algorithm: evaluation.decision.selectedAlgorithm,
+      quantum: evaluation.decision.dynamicQuantum,
+      agingThreshold: 10,
+      usePrediction: true,
+    });
+    engineRef.current = engine;
+    const state = engine.getState();
+    updateStates(state);
+  };
+
+  const updateStates = (state: any) => {
+    setCurrentTime(state.currentTime);
+    setCurrentRunning(state.currentRunning);
+    setReadyQueue(state.readyQueue);
+    setGantt(state.gantt);
+    setEvents(state.eventLog);
+  };
+
+  const handlePlayPause = () => {
+    if (isPlaying) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+      intervalRef.current = setInterval(() => {
+        if (!engineRef.current) return;
+        const state = engineRef.current.step();
+        updateStates(state);
+        if (state.isFinished) {
+          setIsPlaying(false);
+          if (intervalRef.current) clearInterval(intervalRef.current);
+        }
+      }, 70);
+    }
+  };
+
+  const handleStep = () => {
+    if (!engineRef.current) return;
+    const state = engineRef.current.step();
+    updateStates(state);
+    if (state.isFinished) {
+      setIsPlaying(false);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    }
+  };
+
+  const handleReset = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsPlaying(false);
+    if (engineRef.current) {
+      engineRef.current.reset();
+      updateStates(engineRef.current.getState());
+    }
+  };
+
+  const totalBusy = gantt.filter(g => g.pid !== 'IDLE').reduce((s, g) => s + g.duration, 0);
+  const currentUtil = currentTime > 0 ? Math.round((totalBusy / currentTime) * 100) : 0;
+
   return (
     <div className="relative min-h-[calc(100vh-3.5rem)] flex flex-col justify-between tech-grid">
       {/* Top Banner Tag */}
-      <div className="border-b border-[#1c202a] bg-[#0c0e14]/80 py-1.5 px-4 sm:px-6">
-        <div className="mx-auto max-w-7xl flex items-center justify-between text-[11px] font-mono text-[#636d85]">
+      <div className="border-b border-[#21262d] bg-[#0a0c0e]/90 py-1.5 px-3 sm:px-6">
+        <div className="mx-auto max-w-7xl flex items-center justify-between text-[11px] font-mono text-[#6e7681]">
           <span className="flex items-center gap-2">
             <span className="text-amber-500 font-bold">KERNEL//LAB</span>
             <span>::</span>
             <span>SYSTEM DISPATCHER & PREDICTIVE ANALYTICS ENGINE</span>
           </span>
-          <span className="hidden sm:inline text-[#8e99b0]">
-            ARCH: X86_64 // SCHED: ADAPTIVE // TICK: 1MS
+          <span className="hidden sm:inline text-[#8b949e]">
+            ARCH: X86_64 // SCHED: WORKLOAD-AWARE // TICK: 1MS
           </span>
         </div>
       </div>
 
-      {/* Hero Section */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12 sm:py-16 w-full">
-        <div className="max-w-3xl space-y-6">
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#141720] border border-[#212635] text-amber-500 font-mono text-xs font-semibold tracking-wider uppercase">
+      {/* Hero Section Above the Fold (Section 5) */}
+      <div className="mx-auto max-w-7xl px-3 sm:px-6 pt-10 pb-8 w-full">
+        <div className="max-w-3xl space-y-4">
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-[#161b22] border border-[#30363d] text-amber-400 font-mono text-xs font-semibold tracking-wider uppercase">
             <span>OPERATING SYSTEMS LAB</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black font-mono tracking-tight text-white leading-tight uppercase">
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black font-mono tracking-tight text-[#f3f4f6] leading-tight uppercase">
             THE CPU DECIDES.<br />
             <span className="text-amber-400">THE WORKLOAD CHANGES.</span>
           </h1>
 
-          <p className="text-sm sm:text-base text-[#8e99b0] leading-relaxed max-w-2xl font-sans">
-            Explore how scheduling policies behave under changing workloads and see how predictive scheduling adapts in real time.
+          <p className="text-xs sm:text-sm text-[#8b949e] leading-relaxed max-w-2xl font-mono">
+            Explore how scheduling policies behave under changing workloads and how predictive scheduling adapts in real time.
           </p>
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-3 pt-2 font-mono text-xs">
             <Link
               href="/scheduler"
-              className="flex items-center gap-2 px-5 py-3 rounded-sm bg-amber-500 hover:bg-amber-400 text-black font-bold tracking-wider uppercase transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black tracking-wider uppercase transition-colors"
             >
               <Play className="h-3.5 w-3.5 fill-black" />
-              START SIMULATION
+              LAUNCH CONTROL ROOM
             </Link>
 
             <Link
               href="/algorithms"
-              className="flex items-center gap-2 px-5 py-3 rounded-sm bg-[#151922] hover:bg-[#1c2230] text-[#c0c7d6] border border-[#262d3e] font-semibold tracking-wider uppercase transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#161b22] hover:bg-[#21262d] text-[#c9d1d9] border border-[#30363d] font-bold tracking-wider uppercase transition-colors"
             >
               EXPLORE ALGORITHMS
               <ArrowRight className="h-3.5 w-3.5 text-amber-400" />
@@ -68,160 +175,125 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Live Central CPU Visualization & Telemetry Board */}
-        <div className="mt-12 rounded-sm border border-[#1e2330] bg-[#0c0e14] p-5 shadow-2xl">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#181c26] text-xs font-mono text-[#8e99b0] gap-2">
+        {/* Live Control Room Immediate Preview (Section 5) */}
+        <div className="mt-8 border border-[#21262d] bg-[#0d0f12] shadow-2xl p-4 font-mono text-xs space-y-4">
+          {/* Top Live Ribbon */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#21262d] gap-2">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-white font-bold tracking-wider">HARDWARE TELEMETRY & EXECUTION MONITOR</span>
-            </div>
-            <span className="text-[11px] text-[#636d85]">CORE #0 // STATE: READY TO DISPATCH</span>
-          </div>
-
-          {/* CPU Visualizer Block */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 py-5 font-mono text-xs">
-            {/* CPU 0 Status */}
-            <div className="rounded-sm bg-[#10131a] border border-[#1b202c] p-4 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] text-[#636d85] uppercase tracking-wider block">Processor Core</span>
-                <span className="text-xl font-bold text-white mt-1 block">CPU 0</span>
-              </div>
-              <div className="mt-4">
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#8e99b0]">Core Load</span>
-                  <span className="text-amber-400 font-bold">0% (IDLE)</span>
-                </div>
-                <div className="text-[10px] text-[#636d85] font-mono tracking-tighter">
-                  ░░░░░░░░░░░░░░░░░░░░ 0%
-                </div>
-              </div>
-              <span className="text-[10px] text-[#636d85] mt-3 block border-t border-[#181c26] pt-2">
-                STATUS: WAITING FOR CLOCK TICK
+              <span className="h-2 w-2 bg-amber-400 animate-pulse" />
+              <span className="font-bold text-[#f3f4f6] uppercase tracking-wider text-xs">
+                ACTIVE HARDWARE SIMULATION // CORE 0 DISPATCH
               </span>
             </div>
 
-            {/* Current Process / Execution */}
-            <div className="rounded-sm bg-[#10131a] border border-[#1b202c] p-4 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] text-[#636d85] uppercase tracking-wider block">Dispatched Process</span>
-                <span className="text-xl font-bold text-[#8e99b0] mt-1 block">[ NONE ]</span>
-              </div>
-              <div className="mt-4 text-[11px] text-[#8e99b0] space-y-1">
-                <div>Burst Remaining: <span className="text-white">-- ms</span></div>
-                <div>Priority Level: <span className="text-white">--</span></div>
-                <div>Process Type: <span className="text-white">--</span></div>
-              </div>
-              <span className="text-[10px] text-[#636d85] mt-3 block border-t border-[#181c26] pt-2">
-                RUNNING SLOT: IDLE
-              </span>
-            </div>
-
-            {/* Active Policy */}
-            <div className="rounded-sm bg-[#10131a] border border-[#1b202c] p-4 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] text-[#636d85] uppercase tracking-wider block">Scheduling Policy</span>
-                <span className="text-xl font-bold text-amber-400 mt-1 block">SMART (ADAPTIVE)</span>
-              </div>
-              <div className="mt-4 text-[11px] text-[#8e99b0] space-y-1">
-                <div>Dynamic Slice (q): <span className="text-white">AUTO-COMPUTED</span></div>
-                <div>Aging Trigger: <span className="text-white">ENABLED (10ms)</span></div>
-                <div>Predictor: <span className="text-white">EXPONENTIAL (α=0.5)</span></div>
-              </div>
-              <span className="text-[10px] text-[#636d85] mt-3 block border-t border-[#181c26] pt-2">
-                EVALUATION: MULTI-OBJECTIVE
-              </span>
-            </div>
-
-            {/* Execution Timeline Snapshot */}
-            <div className="rounded-sm bg-[#10131a] border border-[#1b202c] p-4 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] text-[#636d85] uppercase tracking-wider block">Simulation Clock</span>
-                <span className="text-xl font-bold text-white mt-1 block">t = 0.00 ms</span>
-              </div>
-              <div className="mt-4 text-[11px] text-[#8e99b0] space-y-1">
-                <div>Ready Queue Depth: <span className="text-white">0</span></div>
-                <div>Completed Tasks: <span className="text-white">0</span></div>
-                <div>Context Switches: <span className="text-white">0</span></div>
-              </div>
-              <Link 
-                href="/scheduler" 
-                className="text-[10px] text-amber-400 hover:text-amber-300 font-bold mt-3 block border-t border-[#181c26] pt-2 flex items-center justify-between"
+            {/* Quick Live Controls */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePlayPause}
+                className={`px-3 py-1 font-bold uppercase transition-colors flex items-center gap-1.5 ${
+                  isPlaying ? 'bg-amber-400 text-black' : 'bg-emerald-500 text-black'
+                }`}
               >
-                <span>OPEN SIMULATOR</span>
-                <ArrowRight className="h-3 w-3" />
-              </Link>
+                {isPlaying ? <Pause className="h-3 w-3 fill-black" /> : <Play className="h-3 w-3 fill-black" />}
+                {isPlaying ? 'PAUSE' : 'START SIMULATION'}
+              </button>
+
+              <button
+                onClick={handleStep}
+                disabled={isPlaying}
+                className="px-2.5 py-1 bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] font-bold uppercase disabled:opacity-40"
+              >
+                STEP
+              </button>
+
+              <button
+                onClick={handleReset}
+                className="px-2.5 py-1 bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-[#8b949e] font-bold uppercase"
+              >
+                RESET
+              </button>
+
+              <span className="px-2 py-1 bg-[#161b22] border border-[#30363d] text-amber-400 font-bold">
+                t = {currentTime.toFixed(2)}ms
+              </span>
             </div>
           </div>
 
-          {/* Quick Command Ribbon */}
-          <div className="mt-2 border-t border-[#181c26] pt-3 flex flex-wrap items-center justify-between text-xs font-mono text-[#8e99b0] gap-2">
-            <span className="text-[#636d85]">
-              QUICK COMMAND: LAUNCH THE INTERACTIVE CONTROL ROOM TO INITIALIZE BENCHMARKS
-            </span>
-            <Link 
-              href="/scheduler" 
-              className="text-amber-400 hover:underline flex items-center gap-1 font-semibold"
-            >
-              LAUNCH KERNEL CONTROL ROOM &rarr;
-            </Link>
+          {/* 3-Column Preview Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-4">
+              <CPUVisualizer
+                currentRunning={currentRunning}
+                currentTime={currentTime}
+                cpuUtilization={currentUtil}
+                algorithm={smartDecision ? smartDecision.selectedAlgorithm : 'SMART'}
+                quantum={smartDecision?.dynamicQuantum || 4}
+                readyQueueCount={readyQueue.length}
+              />
+            </div>
+
+            <div className="lg:col-span-8 space-y-4">
+              <GanttChart
+                segments={gantt}
+                currentTime={currentTime}
+                onSelectProcess={(pid) => {
+                  const p = processes.find(proc => proc.pid === pid);
+                  if (p) {
+                    setInspectPCB(createPCB(p));
+                  }
+                }}
+              />
+
+              <ReadyQueue
+                queue={readyQueue}
+                onSelectProcess={(pid) => {
+                  const found = readyQueue.find(p => p.pid === pid);
+                  if (found) setInspectPCB(found);
+                }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Technical Subsystem Modules Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-8 font-mono text-xs">
-          <Link href="/processes" className="p-4 rounded-sm border border-[#1c212d] bg-[#0c0e14] hover:border-amber-500/40 transition-colors group">
-            <div className="flex items-center justify-between text-[#636d85] group-hover:text-amber-400 mb-2">
-              <span className="text-[10px] uppercase tracking-wider">MODULE // 01</span>
-              <Layers className="h-4 w-4" />
-            </div>
-            <h3 className="font-bold text-white text-sm">PROCESS MONITOR & PCB</h3>
-            <p className="text-[11px] text-[#8e99b0] mt-1 font-sans">
-              Real process control block tracking, state transitions, and deterministic workload generation.
+        {/* 4 Feature Engineering Pillars */}
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-3 font-mono text-xs">
+          <div className="border border-[#21262d] bg-[#13171d] p-3 space-y-1">
+            <span className="text-[10px] text-amber-400 font-bold uppercase block">01 // PREDICT</span>
+            <span className="text-sm font-bold text-[#f3f4f6] block">BURST ESTIMATION</span>
+            <p className="text-[10px] text-[#8b949e] font-sans">
+              Exponential Averaging model tracking CPU bursts with statistical confidence scoring.
             </p>
-          </Link>
+          </div>
 
-          <Link href="/predictions" className="p-4 rounded-sm border border-[#1c212d] bg-[#0c0e14] hover:border-amber-500/40 transition-colors group">
-            <div className="flex items-center justify-between text-[#636d85] group-hover:text-amber-400 mb-2">
-              <span className="text-[10px] uppercase tracking-wider">MODULE // 02</span>
-              <Activity className="h-4 w-4" />
-            </div>
-            <h3 className="font-bold text-white text-sm">BURST PREDICTOR</h3>
-            <p className="text-[11px] text-[#8e99b0] mt-1 font-sans">
-              Exponential Averaging engine with statistical error feedback and dynamic confidence boundaries.
+          <div className="border border-[#21262d] bg-[#13171d] p-3 space-y-1">
+            <span className="text-[10px] text-amber-400 font-bold uppercase block">02 // ANALYZE</span>
+            <span className="text-sm font-bold text-[#f3f4f6] block">WORKLOAD PROFILING</span>
+            <p className="text-[10px] text-[#8b949e] font-sans">
+              Calculates CPU/IO ratio, burst variance, and queue pressure across dynamically shifting tasks.
             </p>
-          </Link>
+          </div>
 
-          <Link href="/algorithms" className="p-4 rounded-sm border border-[#1c212d] bg-[#0c0e14] hover:border-amber-500/40 transition-colors group">
-            <div className="flex items-center justify-between text-[#636d85] group-hover:text-amber-400 mb-2">
-              <span className="text-[10px] uppercase tracking-wider">MODULE // 03</span>
-              <GitBranch className="h-4 w-4" />
-            </div>
-            <h3 className="font-bold text-white text-sm">ALGORITHM MATRIX</h3>
-            <p className="text-[11px] text-[#8e99b0] mt-1 font-sans">
-              Rigorous implementations of FCFS, SJF, SRTF, Round Robin, Priority Aging, and MLFQ.
+          <div className="border border-[#21262d] bg-[#13171d] p-3 space-y-1">
+            <span className="text-[10px] text-amber-400 font-bold uppercase block">03 // ADAPT</span>
+            <span className="text-sm font-bold text-[#f3f4f6] block">AUTONOMOUS POLICY</span>
+            <p className="text-[10px] text-[#8b949e] font-sans">
+              Evaluates candidates on identical workloads to choose the optimal policy and dynamic quantum.
             </p>
-          </Link>
+          </div>
 
-          <Link href="/analytics" className="p-4 rounded-sm border border-[#1c212d] bg-[#0c0e14] hover:border-amber-500/40 transition-colors group">
-            <div className="flex items-center justify-between text-[#636d85] group-hover:text-amber-400 mb-2">
-              <span className="text-[10px] uppercase tracking-wider">MODULE // 04</span>
-              <Clock className="h-4 w-4" />
-            </div>
-            <h3 className="font-bold text-white text-sm">BENCHMARK WORKSTATION</h3>
-            <p className="text-[11px] text-[#8e99b0] mt-1 font-sans">
-              Comparative analysis on identical workloads: Waiting, Turnaround, Response, and Jain's Fairness.
+          <div className="border border-[#21262d] bg-[#13171d] p-3 space-y-1">
+            <span className="text-[10px] text-amber-400 font-bold uppercase block">04 // EXPLAIN</span>
+            <span className="text-sm font-bold text-[#f3f4f6] block">DECISION TRACE</span>
+            <p className="text-[10px] text-[#8b949e] font-sans">
+              Inspectable rationale cards showing why each scheduling and preemption decision occurred.
             </p>
-          </Link>
+          </div>
         </div>
       </div>
 
-      {/* Engineering Footer Strip */}
-      <div className="border-t border-[#1c202a] bg-[#0a0c10] py-3 px-4 sm:px-6">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between text-[11px] font-mono text-[#636d85] gap-2">
-          <span>KERNEL//LAB &bull; OPERATING SYSTEMS SCHEDULING RESEARCH SUITE</span>
-          <span>100% OFFLINE LOCAL COMPUTATION &bull; NO HARDCODED RESULTS</span>
-        </div>
-      </div>
+      {inspectPCB && (
+        <PCBModal pcb={inspectPCB} onClose={() => setInspectPCB(null)} />
+      )}
     </div>
   );
 }

@@ -3,28 +3,37 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0c10;
-  --foreground: #e6e8ec;
+  --background: #0d0f12;
+  --foreground: #f3f4f6;
+  --panel-bg: #13171d;
+  --panel-border: #21262d;
+  --muted-text: #8b949e;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
   overflow-x: hidden;
   letter-spacing: -0.01em;
 }
 
 /* Engineering Monospace Grid & Technical Aesthetics */
 .tech-grid {
-  background-size: 32px 32px;
+  background-size: 24px 24px;
   background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
 }
 
-.subtle-border {
-  border-color: #1e222d;
+.panel-solid {
+  background-color: #13171d;
+  border: 1px solid #21262d;
+}
+
+.panel-header {
+  background-color: #0e1116;
+  border-bottom: 1px solid #21262d;
 }
 
 /* Technical Minimal Scrollbars */
@@ -34,19 +43,19 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d0f14;
+  background: #0a0c0e;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a303f;
-  border-radius: 2px;
+  background: #21262d;
+  border-radius: 0px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f475d;
+  background: #30363d;
 }
 
-/* Remove default focus rings in favor of crisp amber outline */
+/* Crisp Amber Focus Outline */
 *:focus-visible {
   outline: 1px solid #f59e0b;
   outline-offset: 1px;

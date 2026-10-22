@@ -12,60 +12,76 @@ interface ReadyQueueProps {
 
 export default function ReadyQueue({ queue, onSelectProcess, selectedPid }: ReadyQueueProps) {
   return (
-    <div className="w-full rounded-sm border border-[#1e2330] bg-[#0c0e14] p-4 font-mono text-xs shadow-xl">
-      <div className="flex items-center justify-between pb-2.5 border-b border-[#181c26] mb-3">
+    <div className="w-full bg-[#13171d] border border-[#21262d] font-mono text-xs shadow-xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 bg-[#0e1116] border-b border-[#21262d]">
         <div className="flex items-center gap-2">
-          <Layers className="h-3.5 w-3.5 text-amber-500" />
-          <span className="font-bold text-white uppercase tracking-wider text-xs">
-            OS READY QUEUE
+          <div className="h-2 w-2 rounded-none bg-amber-500" />
+          <span className="font-bold text-[#f3f4f6] uppercase tracking-wider text-[11px]">
+            READY QUEUE // SCHEDULING DISPATCH RAIL
           </span>
-          <span className="text-[10px] text-[#636d85]">
+          <span className="text-[10px] text-[#8b949e]">
             [ DEPTH: <span className="text-amber-400 font-bold">{queue.length}</span> ]
           </span>
         </div>
-        <span className="text-[10px] text-[#4b5563] uppercase">
-          DISPATCH ORDER: HEAD &rarr; TAIL
+        <span className="text-[9px] text-[#6e7681] uppercase">
+          HEAD (NEXT DISPATCH) → TAIL
         </span>
       </div>
 
-      {queue.length === 0 ? (
-        <div className="py-6 text-center text-[#4b5563] text-xs">
-          READY QUEUE EMPTY &bull; NO PROCESSES PENDING DISPATCH
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1">
-          {queue.map((proc, idx) => {
-            const isSelected = selectedPid === proc.pid;
-            return (
-              <React.Fragment key={proc.pid}>
-                <div
-                  onClick={() => onSelectProcess && onSelectProcess(proc.pid)}
-                  className={`flex flex-col min-w-[96px] p-2 rounded-sm border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-[#1e2536] border-amber-400 shadow-md ring-1 ring-amber-400'
-                      : 'bg-[#10131a] border-[#222736] hover:border-[#384158] hover:bg-[#141822]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white tracking-wider">{proc.pid}</span>
-                    <span className="text-[9px] text-[#636d85]">P{proc.effectivePriority}</span>
-                  </div>
-                  <div className="text-[10px] text-amber-400 font-bold mt-1">
-                    τ: {proc.prediction}ms
-                  </div>
-                  <div className="text-[9px] text-[#636d85] mt-0.5">
-                    Rem: {proc.remainingBurst}ms
-                  </div>
-                </div>
+      <div className="p-3">
+        {queue.length === 0 ? (
+          <div className="py-6 text-center text-[#6e7681] border border-dashed border-[#21262d] bg-[#0d0f12]">
+            <span className="text-xs uppercase font-bold text-[#8b949e]">READY QUEUE EMPTY</span>
+            <p className="text-[10px] text-[#484f58] mt-0.5">
+              NO PROCESSES PENDING DISPATCH IN RUNQUEUE
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-1">
+            {queue.map((proc, idx) => {
+              const isSelected = selectedPid === proc.pid;
+              return (
+                <React.Fragment key={proc.pid}>
+                  <div
+                    onClick={() => onSelectProcess && onSelectProcess(proc.pid)}
+                    className={`flex flex-col min-w-[105px] p-2 border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-[#1c2230] border-amber-400 ring-1 ring-amber-400 text-white'
+                        : 'bg-[#0d0f12] border-[#21262d] hover:border-[#384158] hover:bg-[#161b22]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between border-b border-[#1c2128] pb-1">
+                      <span className="font-bold text-amber-400 tracking-wider text-xs">
+                        {proc.pid}
+                      </span>
+                      <span className="text-[9px] text-[#8b949e] font-semibold">
+                        PRI:{proc.effectivePriority}
+                      </span>
+                    </div>
 
-                {idx < queue.length - 1 && (
-                  <ArrowRight className="h-3.5 w-3.5 text-[#374151] shrink-0" />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-      )}
+                    <div className="text-[10px] text-[#38bdf8] font-bold mt-1">
+                      τ: {proc.prediction}ms
+                    </div>
+                    <div className="text-[9px] text-[#8b949e] mt-0.5">
+                      REM: {proc.remainingBurst}ms
+                    </div>
+                    <div className="text-[8px] text-[#6e7681] mt-0.5">
+                      WAIT: {proc.waitingTime}ms
+                    </div>
+                  </div>
+
+                  {idx < queue.length - 1 && (
+                    <span className="text-[#484f58] font-mono select-none text-xs px-0.5">
+                      →
+                    </span>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

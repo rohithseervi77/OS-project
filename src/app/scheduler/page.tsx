@@ -7,8 +7,7 @@ import {
   AlgorithmType, 
   SchedulingResult, 
   SmartDecision, 
-  WorkloadCharacteristics,
-  ObjectiveWeights
+  WorkloadCharacteristics 
 } from '../../lib/types';
 import { generateProcesses } from '../../lib/workload/generator';
 import { runFCFS } from '../../lib/scheduler/fcfs';
@@ -17,7 +16,7 @@ import { runSRTF } from '../../lib/scheduler/srtf';
 import { runRoundRobin } from '../../lib/scheduler/roundRobin';
 import { runPriority } from '../../lib/scheduler/priority';
 import { runMLFQ } from '../../lib/scheduler/mlfq';
-import { evaluateSmartScheduler, DEFAULT_OBJECTIVE_WEIGHTS } from '../../lib/scheduler/smartScheduler';
+import { evaluateSmartScheduler } from '../../lib/scheduler/smartScheduler';
 import { analyzeWorkload } from '../../lib/workload/analyzer';
 import { DiscreteEventSimulationEngine } from '../../lib/simulation/engine';
 import { SimulationEvent } from '../../lib/simulation/events';
@@ -26,19 +25,21 @@ import GanttChart from '../../components/GanttChart';
 import ReadyQueue from '../../components/ReadyQueue';
 import SystemEventStream from '../../components/SystemEventStream';
 import DecisionPanel from '../../components/DecisionPanel';
+import StarvationMonitor from '../../components/StarvationMonitor';
 import PCBModal from '../../components/PCBModal';
+import { createPCB } from '../../lib/pcb';
 import { 
   Play, 
   Pause, 
   RotateCcw, 
   SkipForward, 
+  Zap, 
   Sliders, 
   Layers, 
   Terminal, 
-  Sparkles,
-  Cpu,
-  Activity,
-  ArrowRight
+  Cpu, 
+  Activity, 
+  FolderPlus 
 } from 'lucide-react';
 
 export default function ControlRoomPage() {
@@ -63,9 +64,12 @@ export default function ControlRoomPage() {
   const engineRef = useRef<DiscreteEventSimulationEngine | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load default mixed workload on mount
+  // Auto-load demo workload on mount (Demo-first experience)
   useEffect(() => {
     handleLoadScenario('MIXED');
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, []);
 
   const handleLoadScenario = (sc: 'MIXED' | 'CPU_HEAVY' | 'INTERACTIVE' | 'STARVATION' | 'UNCERTAIN') => {
@@ -76,7 +80,13 @@ export default function ControlRoomPage() {
     setWorkload(wl);
     const evaluation = evaluateSmartScheduler(procs);
     setSmartDecision(evaluation.decision);
-    initEngine(procs, activeAlgorithm === 'SMART' ? evaluation.decision.selectedAlgorithm : activeAlgorithm, evaluation.decision.dynamicQuantum);
+
+    const targetAlgo = activeAlgorithm === 'SMART' ? evaluation.decision.selectedAlgorithm : activeAlgorithm;
+    initEngine(procs, targetAlgo, evaluation.decision.dynamicQuantum);
+  };
+
+  const handleLoadDemoWorkload = () => {
+    handleLoadScenario('MIXED');
   };
 
   const initEngine = (procs: Process[], algo: AlgorithmType, dynamicQ: number = 4) => {
@@ -145,6 +155,18 @@ export default function ControlRoomPage() {
     }
   };
 
+  const handleClearProcesses = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsPlaying(false);
+    setProcesses([]);
+    setCurrentTime(0);
+    setCurrentRunning(null);
+    setReadyQueue([]);
+    setGantt([]);
+    setEvents([]);
+    engineRef.current = null;
+  };
+
   const handleSpeedChange = (newSpeed: number) => {
     setSpeed(newSpeed);
     if (isPlaying) {
@@ -168,27 +190,32 @@ export default function ControlRoomPage() {
     initEngine(processes, targetAlgo, smartDecision?.dynamicQuantum || 4);
   };
 
-  // Inspect selected process PCB modal
   const handleSelectProcess = (pid: string) => {
     setSelectedPid(pid);
     const found = readyQueue.find(p => p.pid === pid) || (currentRunning?.pid === pid ? currentRunning : null);
     if (found) {
       setInspectPCB(found);
+    } else {
+      const proc = processes.find(p => p.pid === pid);
+      if (proc) {
+        setInspectPCB(createPCB(proc));
+      }
     }
   };
 
   const totalBusy = gantt.filter(g => g.pid !== 'IDLE').reduce((s, g) => s + g.duration, 0);
   const currentUtil = currentTime > 0 ? Math.round((totalBusy / currentTime) * 100) : 0;
+  const contextSwitches = engineRef.current?.getState().contextSwitches || 0;
 
   return (
-    <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 space-y-4 font-mono text-xs">
-      {/* Top Header & Simulation Controls Ribbon */}
-      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-3 bg-[#0c0e14] border border-[#1e2330] rounded-sm">
-        {/* Playback Button Group */}
+    <div className="mx-auto max-w-7xl px-3 sm:px-6 py-5 space-y-4 font-mono text-xs">
+      {/* Sticky Simulation Control Bar (Section 9) */}
+      <div className="sticky top-14 z-40 bg-[#0d0f12] border border-[#21262d] p-2.5 shadow-2xl flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+        {/* Left: Playback Controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-[#151822] hover:bg-[#1b202e] text-[#8e99b0] hover:text-white border border-[#23293a] font-bold uppercase tracking-wider"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#161b22] hover:bg-[#21262d] text-[#8b949e] hover:text-[#f3f4f6] border border-[#30363d] font-bold uppercase transition-colors"
           >
             <RotateCcw className="h-3 w-3" />
             RESET
@@ -196,10 +223,8 @@ export default function ControlRoomPage() {
 
           <button
             onClick={handlePlayPause}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-sm font-bold uppercase tracking-wider text-black transition-colors ${
-              isPlaying
-                ? 'bg-amber-400 hover:bg-amber-300'
-                : 'bg-emerald-500 hover:bg-emerald-400'
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 font-bold uppercase tracking-wider text-black transition-colors ${
+              isPlaying ? 'bg-amber-400 hover:bg-amber-300' : 'bg-emerald-500 hover:bg-emerald-400'
             }`}
           >
             {isPlaying ? <Pause className="h-3.5 w-3.5 fill-black" /> : <Play className="h-3.5 w-3.5 fill-black" />}
@@ -208,22 +233,22 @@ export default function ControlRoomPage() {
 
           <button
             onClick={handleStep}
-            disabled={isPlaying}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-sm bg-[#151822] hover:bg-[#1b202e] text-[#c0c7d6] border border-[#23293a] font-bold uppercase tracking-wider disabled:opacity-40"
+            disabled={isPlaying || processes.length === 0}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#161b22] hover:bg-[#21262d] text-[#c9d1d9] border border-[#30363d] font-bold uppercase disabled:opacity-40"
           >
             <SkipForward className="h-3 w-3" />
             STEP
           </button>
 
           {/* Speed selector */}
-          <div className="flex items-center gap-1 bg-[#090b0f] border border-[#1e2330] px-1.5 py-1 rounded-sm ml-1 text-[11px]">
-            <span className="text-[#636d85] uppercase text-[9px]">SPEED:</span>
+          <div className="flex items-center gap-1 bg-[#161b22] border border-[#30363d] px-1.5 py-1 text-[10px]">
+            <span className="text-[#6e7681] uppercase text-[9px]">SPEED:</span>
             {[0.5, 1, 2, 5].map((s) => (
               <button
                 key={s}
                 onClick={() => handleSpeedChange(s)}
-                className={`px-1.5 py-0.2 rounded-sm font-bold ${
-                  speed === s ? 'bg-amber-500 text-black' : 'text-[#8e99b0] hover:text-white'
+                className={`px-1.5 py-0.2 font-bold ${
+                  speed === s ? 'bg-amber-500 text-black' : 'text-[#8b949e] hover:text-white'
                 }`}
               >
                 {s}x
@@ -231,22 +256,39 @@ export default function ControlRoomPage() {
             ))}
           </div>
 
-          <div className="px-2.5 py-1 rounded-sm bg-[#090b0f] border border-[#1e2330] text-amber-400 font-bold ml-1">
-            t = {currentTime.toFixed(2)} ms
-          </div>
+          {/* Demo Button */}
+          <button
+            onClick={handleLoadDemoWorkload}
+            className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold uppercase"
+          >
+            LOAD DEMO WORKLOAD
+          </button>
         </div>
 
-        {/* Workload Scenario Switcher */}
+        {/* Center: Live Telemetry Values */}
+        <div className="flex items-center gap-2 flex-wrap text-[10px] bg-[#13171d] border border-[#21262d] px-2.5 py-1">
+          <span>CLOCK: <span className="text-amber-400 font-bold">{currentTime.toFixed(2)}ms</span></span>
+          <span className="text-[#30363d]">|</span>
+          <span>CPU: <span className="text-[#f3f4f6] font-bold">{currentUtil}%</span></span>
+          <span className="text-[#30363d]">|</span>
+          <span>QUEUE: <span className="text-[#38bdf8] font-bold">{readyQueue.length}</span></span>
+          <span className="text-[#30363d]">|</span>
+          <span>TASKS: <span className="text-emerald-400 font-bold">{processes.length}</span></span>
+          <span className="text-[#30363d]">|</span>
+          <span>CS: <span className="text-amber-300 font-bold">{contextSwitches}</span></span>
+        </div>
+
+        {/* Right: Workload Scenario Switcher (Section 15) */}
         <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-[10px] text-[#636d85] uppercase mr-1">SCENARIO:</span>
+          <span className="text-[9px] text-[#6e7681] uppercase mr-0.5">SCENARIO:</span>
           {(['MIXED', 'CPU_HEAVY', 'INTERACTIVE', 'STARVATION', 'UNCERTAIN'] as const).map((sc) => (
             <button
               key={sc}
               onClick={() => handleLoadScenario(sc)}
-              className={`px-2 py-1 rounded-sm text-[10px] uppercase font-bold transition-colors ${
+              className={`px-2 py-1 text-[10px] uppercase font-bold transition-colors ${
                 scenario === sc
-                  ? 'bg-[#1e2536] text-amber-400 border border-amber-500/50'
-                  : 'text-[#636d85] hover:text-[#c0c7d6] bg-[#090b0f]'
+                  ? 'bg-amber-500 text-black'
+                  : 'bg-[#161b22] text-[#8b949e] hover:text-[#f3f4f6] border border-[#30363d]'
               }`}
             >
               {sc.replace('_', ' ')}
@@ -255,19 +297,19 @@ export default function ControlRoomPage() {
         </div>
       </div>
 
-      {/* Policy Selector Ribbon */}
-      <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 bg-[#090b0f] border border-[#181c26] rounded-sm text-[11px]">
-        <span className="text-[10px] text-[#636d85] uppercase px-1">POLICY:</span>
+      {/* Policy Selection Ribbon */}
+      <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 bg-[#13171d] border border-[#21262d] text-[11px]">
+        <span className="text-[10px] text-[#8b949e] uppercase px-1 font-bold">SCHEDULING POLICY:</span>
         {(['SMART', 'FCFS', 'SJF', 'SRTF', 'RR', 'PRIORITY', 'MLFQ'] as AlgorithmType[]).map((algo) => {
           const isSelected = activeAlgorithm === algo;
           return (
             <button
               key={algo}
               onClick={() => handleAlgorithmChange(algo)}
-              className={`px-3 py-1 rounded-sm font-bold uppercase transition-colors whitespace-nowrap ${
+              className={`px-3 py-1 font-bold uppercase transition-colors whitespace-nowrap ${
                 isSelected
                   ? 'bg-amber-500 text-black'
-                  : 'text-[#8e99b0] hover:text-white hover:bg-[#141822]'
+                  : 'bg-[#161b22] text-[#8b949e] hover:text-[#f3f4f6] border border-[#30363d]'
               }`}
             >
               {algo === 'SMART' ? '⚡ SMART SCHEDULER' : algo}
@@ -276,67 +318,95 @@ export default function ControlRoomPage() {
         })}
       </div>
 
-      {/* Main 3-Column CPU Control Room Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* LEFT COLUMN: CPU Status (3 cols) */}
-        <div className="lg:col-span-3 space-y-4">
-          <CPUVisualizer
-            currentRunning={currentRunning}
-            currentTime={currentTime}
-            cpuUtilization={currentUtil}
-            algorithm={activeAlgorithm === 'SMART' && smartDecision ? smartDecision.selectedAlgorithm : activeAlgorithm}
-            quantum={smartDecision?.dynamicQuantum || 4}
-          />
-        </div>
-
-        {/* CENTER COLUMN: Execution Timeline (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <GanttChart
-            segments={gantt}
-            currentTime={currentTime}
-            onSelectProcess={handleSelectProcess}
-            selectedPid={selectedPid || undefined}
-          />
-
-          {/* Quick Metrics Strip */}
-          <div className="grid grid-cols-3 gap-2 bg-[#0c0e14] border border-[#1e2330] p-3 rounded-sm text-center">
-            <div>
-              <span className="text-[9px] text-[#636d85] block uppercase">Utilized</span>
-              <span className="text-sm font-bold text-white">{currentUtil}%</span>
-            </div>
-            <div>
-              <span className="text-[9px] text-[#636d85] block uppercase">Context Switches</span>
-              <span className="text-sm font-bold text-amber-400">{engineRef.current?.getState().contextSwitches || 0}</span>
-            </div>
-            <div>
-              <span className="text-[9px] text-[#636d85] block uppercase">Tasks Remaining</span>
-              <span className="text-sm font-bold text-[#38bdf8]">{readyQueue.length + (currentRunning ? 1 : 0)}</span>
-            </div>
+      {/* Empty State Banner (Section 23) if no processes loaded */}
+      {processes.length === 0 ? (
+        <div className="border border-dashed border-[#21262d] bg-[#13171d] p-8 text-center space-y-3">
+          <h2 className="text-base font-bold text-[#f3f4f6] uppercase tracking-wider">
+            SIMULATION READY
+          </h2>
+          <p className="text-xs text-[#8b949e]">
+            Load a workload scenario or generate custom processes to begin hardware simulation.
+          </p>
+          <div className="flex items-center justify-center gap-2 pt-2 flex-wrap">
+            <button
+              onClick={() => handleLoadScenario('MIXED')}
+              className="px-3 py-1.5 bg-amber-500 text-black font-bold uppercase text-xs"
+            >
+              [ MIXED WORKLOAD ]
+            </button>
+            <button
+              onClick={() => handleLoadScenario('CPU_HEAVY')}
+              className="px-3 py-1.5 bg-[#161b22] text-[#c9d1d9] border border-[#30363d] font-bold uppercase text-xs hover:bg-[#21262d]"
+            >
+              [ CPU HEAVY ]
+            </button>
+            <button
+              onClick={() => handleLoadScenario('INTERACTIVE')}
+              className="px-3 py-1.5 bg-[#161b22] text-[#c9d1d9] border border-[#30363d] font-bold uppercase text-xs hover:bg-[#21262d]"
+            >
+              [ INTERACTIVE ]
+            </button>
+            <button
+              onClick={() => handleLoadScenario('STARVATION')}
+              className="px-3 py-1.5 bg-[#161b22] text-[#c9d1d9] border border-[#30363d] font-bold uppercase text-xs hover:bg-[#21262d]"
+            >
+              [ STARVATION TEST ]
+            </button>
           </div>
         </div>
+      ) : (
+        <>
+          {/* Main 3-Column CPU Control Room Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* LEFT COLUMN: CPU Status & Resource Monitor (3 cols) */}
+            <div className="lg:col-span-3 space-y-4">
+              <CPUVisualizer
+                currentRunning={currentRunning}
+                currentTime={currentTime}
+                cpuUtilization={currentUtil}
+                algorithm={activeAlgorithm === 'SMART' && smartDecision ? smartDecision.selectedAlgorithm : activeAlgorithm}
+                quantum={smartDecision?.dynamicQuantum || 4}
+                readyQueueCount={readyQueue.length}
+              />
+            </div>
 
-        {/* RIGHT COLUMN: Scheduler Decision & Analysis (4 cols) */}
-        <div className="lg:col-span-4 space-y-4">
-          <DecisionPanel decision={smartDecision} workload={workload} />
-        </div>
-      </div>
+            {/* CENTER COLUMN: Execution Timeline & Ready Queue (5 cols) */}
+            <div className="lg:col-span-5 space-y-4">
+              <GanttChart
+                segments={gantt}
+                currentTime={currentTime}
+                onSelectProcess={handleSelectProcess}
+                selectedPid={selectedPid || undefined}
+              />
 
-      {/* BOTTOM SECTION: Ready Queue + Event Stream */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-6">
-          <ReadyQueue
-            queue={readyQueue}
-            onSelectProcess={handleSelectProcess}
-            selectedPid={selectedPid}
-          />
-        </div>
+              <ReadyQueue
+                queue={readyQueue}
+                onSelectProcess={handleSelectProcess}
+                selectedPid={selectedPid}
+              />
 
-        <div className="lg:col-span-6">
-          <SystemEventStream events={events} maxHeight="h-44" />
-        </div>
-      </div>
+              {/* Starvation & Aging Telemetry Panel (Section 16) */}
+              <StarvationMonitor
+                readyQueue={readyQueue}
+                agingThreshold={10}
+                onSelectProcess={handleSelectProcess}
+              />
+            </div>
 
-      {/* Process PCB Inspector Modal / Slide-over */}
+            {/* RIGHT COLUMN: Scheduler Decision Trace (4 cols) */}
+            <div className="lg:col-span-4 space-y-4">
+              <DecisionPanel decision={smartDecision} workload={workload} />
+            </div>
+          </div>
+
+          {/* Bottom Terminal System Event Stream */}
+          <div className="pt-2">
+            <SystemEventStream events={events} maxHeight="h-44" />
+          </div>
+        </>
+      )}
+
+      {/* PCB Modal Inspector */}
       {inspectPCB && (
         <PCBModal pcb={inspectPCB} onClose={() => setInspectPCB(null)} />
       )}
