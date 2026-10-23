@@ -108,18 +108,12 @@ export function evaluateSmartScheduler(
       normFair * weights.fairness +
       normCS * weights.contextSwitches;
 
-    // 4. Confidence-Aware Modulation
+    // 4. Confidence-Aware Modulation (penalize prediction reliance when confidence is low)
     let confidenceMultiplier = 1.0;
     if (confidenceLevel === 'LOW') {
-      // Penalize algorithms with extreme reliance on burst predictions
+      // Penalize algorithms with extreme reliance on uncertain burst predictions
       if (candidate.algorithm === 'SRTF') confidenceMultiplier = 0.70;
       if (candidate.algorithm === 'SJF') confidenceMultiplier = 0.80;
-      if (candidate.algorithm === 'RR') confidenceMultiplier = 1.15; // Boost conservative fair algorithm
-    } else if (confidenceLevel === 'MEDIUM') {
-      if (candidate.algorithm === 'SRTF') confidenceMultiplier = 0.90;
-    } else {
-      // High confidence: full predictive advantage rewarded
-      if (candidate.algorithm === 'SRTF') confidenceMultiplier = 1.05;
     }
 
     const finalScore = Number((rawScore * confidenceMultiplier).toFixed(3));

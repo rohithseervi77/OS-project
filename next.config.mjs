@@ -6,6 +6,7 @@ const nextConfig = {
   ...(isGithubPages ? {
     output: 'export',
     basePath: '/OS-project',
+    trailingSlash: true,
     images: { unoptimized: true },
   } : {}),
 };

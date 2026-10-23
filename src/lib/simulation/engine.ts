@@ -8,6 +8,7 @@ export interface SimulationEngineConfig {
   quantum?: number;
   agingThreshold?: number;
   usePrediction?: boolean;
+  mlfqBoostInterval?: number;
 }
 
 export class DiscreteEventSimulationEngine {
@@ -20,6 +21,12 @@ export class DiscreteEventSimulationEngine {
   private completed: PCB[];
   private currentRunning: PCB | null = null;
   private currentQuantumUsed: number = 0;
+
+  // MLFQ state tracking
+  private mlfqQ0: PCB[] = [];
+  private mlfqQ1: PCB[] = [];
+  private mlfqQ2: PCB[] = [];
+  private processQueueLevel: Map<string, number> = new Map();
 
   private currentTime: number = 0;
   private contextSwitches: number = 0;
@@ -36,6 +43,10 @@ export class DiscreteEventSimulationEngine {
     this.unarrived = [...this.pcbs].sort((a, b) => a.arrivalTime - b.arrivalTime);
     this.readyQueue = [];
     this.completed = [];
+    this.mlfqQ0 = [];
+    this.mlfqQ1 = [];
+    this.mlfqQ2 = [];
+    this.processQueueLevel = new Map();
     this.currentTime = 0;
     this.contextSwitches = 0;
     this.totalBusyTime = 0;
@@ -65,16 +76,34 @@ export class DiscreteEventSimulationEngine {
     while (this.unarrived.length > 0 && this.unarrived[0].arrivalTime <= time) {
       const arrived = this.unarrived.shift()!;
       transitionState(arrived, 'READY', time);
-      this.readyQueue.push(arrived);
-      this.logEvent(time, 'PROCESS_ARRIVAL', arrived.pid, `${arrived.pid} arrived at t=${time}ms (Burst: ${arrived.burstTime}ms)`);
+      if (this.config.algorithm === 'MLFQ') {
+        this.processQueueLevel.set(arrived.pid, 0);
+        this.mlfqQ0.push(arrived);
+        this.logEvent(time, 'PROCESS_ARRIVAL', arrived.pid, `${arrived.pid} arrived at t=${time}ms -> placed in MLFQ Q0`);
+      } else {
+        this.readyQueue.push(arrived);
+        this.logEvent(time, 'PROCESS_ARRIVAL', arrived.pid, `${arrived.pid} arrived at t=${time}ms (Burst: ${arrived.burstTime}ms)`);
+      }
     }
   }
 
   private selectNextProcess(): PCB | null {
-    if (this.readyQueue.length === 0) return null;
-
     const algo = this.config.algorithm;
     const usePred = this.config.usePrediction ?? false;
+
+    if (algo === 'MLFQ') {
+      let next: PCB | null = null;
+      if (this.mlfqQ0.length > 0) {
+        next = this.mlfqQ0.shift()!;
+      } else if (this.mlfqQ1.length > 0) {
+        next = this.mlfqQ1.shift()!;
+      } else if (this.mlfqQ2.length > 0) {
+        next = this.mlfqQ2.shift()!;
+      }
+      return next;
+    }
+
+    if (this.readyQueue.length === 0) return null;
 
     if (algo === 'FCFS') {
       // FIFO
@@ -121,12 +150,33 @@ export class DiscreteEventSimulationEngine {
     const t = this.currentTime;
     const quantum = Math.max(1, this.config.quantum || 4);
     const agingThreshold = this.config.agingThreshold ?? 10;
+    const boostInterval = this.config.mlfqBoostInterval ?? 25;
 
     // 1. Check process arrivals at current time
     this.checkArrivals(t);
 
-    // 2. Check aging for processes waiting in readyQueue
-    if (agingThreshold > 0) {
+    // 2. MLFQ Priority Boost Check
+    if (this.config.algorithm === 'MLFQ' && boostInterval > 0 && t > 0 && t % boostInterval === 0) {
+      let boosted = 0;
+      while (this.mlfqQ1.length > 0) {
+        const p = this.mlfqQ1.shift()!;
+        this.processQueueLevel.set(p.pid, 0);
+        this.mlfqQ0.push(p);
+        boosted++;
+      }
+      while (this.mlfqQ2.length > 0) {
+        const p = this.mlfqQ2.shift()!;
+        this.processQueueLevel.set(p.pid, 0);
+        this.mlfqQ0.push(p);
+        boosted++;
+      }
+      if (boosted > 0) {
+        this.logEvent(t, 'SCHEDULE', 'SYSTEM', `MLFQ Priority Boost: ${boosted} processes promoted to Q0`);
+      }
+    }
+
+    // 3. Check aging for processes waiting in readyQueue (for PRIORITY)
+    if (this.config.algorithm === 'PRIORITY' && agingThreshold > 0) {
       for (const p of this.readyQueue) {
         const wait = t - p.arrivalTime - p.cpuTimeUsed;
         if (checkAndApplyAging(p, wait, agingThreshold)) {
@@ -135,9 +185,27 @@ export class DiscreteEventSimulationEngine {
       }
     }
 
-    // 3. Preemption checks for SRTF or Priority
-    if (this.currentRunning && this.readyQueue.length > 0) {
-      if (this.config.algorithm === 'SRTF') {
+    // 4. Preemption checks for SRTF, Priority, or MLFQ
+    if (this.currentRunning) {
+      if (this.config.algorithm === 'MLFQ') {
+        const currentLvl = this.processQueueLevel.get(this.currentRunning.pid) ?? 0;
+        if (currentLvl > 0 && this.mlfqQ0.length > 0) {
+          this.logEvent(t, 'CPU_PREEMPT', this.currentRunning.pid, `MLFQ Preemption: High priority Q0 arrived, preempting ${this.currentRunning.pid} (Q${currentLvl})`);
+          transitionState(this.currentRunning, 'READY', t);
+          if (currentLvl === 1) this.mlfqQ1.push(this.currentRunning);
+          else this.mlfqQ2.push(this.currentRunning);
+          this.currentRunning = null;
+          this.currentQuantumUsed = 0;
+          this.contextSwitches++;
+        } else if (currentLvl === 2 && this.mlfqQ1.length > 0) {
+          this.logEvent(t, 'CPU_PREEMPT', this.currentRunning.pid, `MLFQ Preemption: Medium priority Q1 arrived, preempting ${this.currentRunning.pid} (Q2)`);
+          transitionState(this.currentRunning, 'READY', t);
+          this.mlfqQ2.push(this.currentRunning);
+          this.currentRunning = null;
+          this.currentQuantumUsed = 0;
+          this.contextSwitches++;
+        }
+      } else if (this.readyQueue.length > 0 && this.config.algorithm === 'SRTF') {
         const usePred = this.config.usePrediction ?? false;
         const currentRem = usePred ? (this.currentRunning.prediction - this.currentRunning.cpuTimeUsed) : this.currentRunning.remainingBurst;
         
@@ -159,7 +227,7 @@ export class DiscreteEventSimulationEngine {
           this.currentRunning = null;
           this.contextSwitches++;
         }
-      } else if (this.config.algorithm === 'PRIORITY') {
+      } else if (this.readyQueue.length > 0 && this.config.algorithm === 'PRIORITY') {
         // Find if readyQueue has strictly higher priority (lower numeric value)
         let highest = this.readyQueue[0];
         for (const p of this.readyQueue) {
@@ -177,23 +245,25 @@ export class DiscreteEventSimulationEngine {
       }
     }
 
-    // 4. Dispatch CPU if idle
+    // 5. Dispatch CPU if idle
     if (!this.currentRunning) {
       const next = this.selectNextProcess();
       if (next) {
         transitionState(next, 'RUNNING', t);
         this.currentRunning = next;
         this.currentQuantumUsed = 0;
-        this.logEvent(t, 'CPU_START', next.pid, `Dispatched ${next.pid} on CPU`);
+        const qInfo = this.config.algorithm === 'MLFQ' ? ` (MLFQ Q${this.processQueueLevel.get(next.pid) ?? 0})` : '';
+        this.logEvent(t, 'CPU_START', next.pid, `Dispatched ${next.pid} on CPU${qInfo}`);
       }
     }
 
-    // 5. Execute 1 ms on CPU
+    // 6. Execute 1 ms on CPU
     if (this.currentRunning) {
+      const qInfo = this.config.algorithm === 'MLFQ' ? ` [Q${this.processQueueLevel.get(this.currentRunning.pid) ?? 0}]` : '';
       this.rawHistory.push({
         pid: this.currentRunning.pid,
         time: t,
-        reason: `Executing (Remaining: ${this.currentRunning.remainingBurst - 1}ms)`,
+        reason: `Executing${qInfo} (Remaining: ${this.currentRunning.remainingBurst - 1}ms)`,
       });
 
       this.currentRunning.remainingBurst -= 1;
@@ -214,6 +284,31 @@ export class DiscreteEventSimulationEngine {
         this.currentRunning = null;
         this.currentQuantumUsed = 0;
       } 
+      // Check MLFQ Demotion
+      else if (this.config.algorithm === 'MLFQ') {
+        const currentLvl = this.processQueueLevel.get(this.currentRunning.pid) ?? 0;
+        const q0Limit = 2;
+        const q1Limit = 4;
+        if (currentLvl === 0 && this.currentQuantumUsed >= q0Limit) {
+          this.logEvent(this.currentTime, 'CPU_PREEMPT', this.currentRunning.pid, `MLFQ Q0 quantum (${q0Limit}ms) expired for ${this.currentRunning.pid} -> Demoted to Q1`);
+          transitionState(this.currentRunning, 'READY', this.currentTime);
+          this.processQueueLevel.set(this.currentRunning.pid, 1);
+          this.checkArrivals(this.currentTime);
+          this.mlfqQ1.push(this.currentRunning);
+          this.currentRunning = null;
+          this.currentQuantumUsed = 0;
+          this.contextSwitches++;
+        } else if (currentLvl === 1 && this.currentQuantumUsed >= q1Limit) {
+          this.logEvent(this.currentTime, 'CPU_PREEMPT', this.currentRunning.pid, `MLFQ Q1 quantum (${q1Limit}ms) expired for ${this.currentRunning.pid} -> Demoted to Q2 (FCFS)`);
+          transitionState(this.currentRunning, 'READY', this.currentTime);
+          this.processQueueLevel.set(this.currentRunning.pid, 2);
+          this.checkArrivals(this.currentTime);
+          this.mlfqQ2.push(this.currentRunning);
+          this.currentRunning = null;
+          this.currentQuantumUsed = 0;
+          this.contextSwitches++;
+        }
+      }
       // Check Round Robin quantum expiration
       else if (this.config.algorithm === 'RR' && this.currentQuantumUsed >= quantum) {
         this.logEvent(this.currentTime, 'CPU_PREEMPT', this.currentRunning.pid, `Quantum of ${quantum}ms expired for ${this.currentRunning.pid}`);
@@ -234,7 +329,7 @@ export class DiscreteEventSimulationEngine {
       this.currentTime += 1;
     }
 
-    // 6. Check termination condition
+    // 7. Check termination condition
     if (this.completed.length === this.pcbs.length) {
       this.isFinished = true;
       this.logEvent(this.currentTime, 'SCHEDULE', 'SYSTEM', `All ${this.pcbs.length} processes completed.`);
@@ -283,11 +378,14 @@ export class DiscreteEventSimulationEngine {
   public getState(): SimulationStepState {
     const gantt = this.getGanttSegments();
     const metrics = calculateMetrics(this.completed, gantt, this.currentTime, this.contextSwitches);
+    const activeReadyQueue = this.config.algorithm === 'MLFQ'
+      ? [...this.mlfqQ0, ...this.mlfqQ1, ...this.mlfqQ2]
+      : [...this.readyQueue];
 
     return {
       currentTime: this.currentTime,
       currentRunning: this.currentRunning,
-      readyQueue: [...this.readyQueue],
+      readyQueue: activeReadyQueue,
       completedProcesses: [...this.completed],
       gantt,
       eventLog: [...this.eventLog],
@@ -303,6 +401,10 @@ export class DiscreteEventSimulationEngine {
     this.unarrived = [...this.pcbs].sort((a, b) => a.arrivalTime - b.arrivalTime);
     this.readyQueue = [];
     this.completed = [];
+    this.mlfqQ0 = [];
+    this.mlfqQ1 = [];
+    this.mlfqQ2 = [];
+    this.processQueueLevel = new Map();
     this.currentRunning = null;
     this.currentQuantumUsed = 0;
     this.currentTime = 0;

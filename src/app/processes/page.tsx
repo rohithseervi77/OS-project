@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Process, ProcessType, WorkloadCharacteristics } from '../../lib/types';
-import { generateProcesses, createManualProcess } from '../../lib/workload/generator';
-import { analyzeWorkload } from '../../lib/workload/analyzer';
+import React, { useState } from 'react';
+import { Process, ProcessType } from '../../lib/types';
+import { createManualProcess } from '../../lib/workload/generator';
+import { useSimulation, WorkloadScenario } from '../../context/SimulationContext';
 import ProcessTable from '../../components/ProcessTable';
 import { 
   Plus, 
@@ -13,17 +13,22 @@ import {
   Cpu, 
   X,
   Play,
-  ArrowRight
+  AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProcessesPage() {
-  const [processes, setProcesses] = useState<Process[]>([]);
-  const [processCount, setProcessCount] = useState<number>(10);
-  const [seed, setSeed] = useState<number>(42);
-  const [scenario, setScenario] = useState<'MIXED' | 'CPU_HEAVY' | 'INTERACTIVE' | 'STARVATION' | 'UNCERTAIN'>('MIXED');
-  const [alpha, setAlpha] = useState<number>(0.5);
-  const [workload, setWorkload] = useState<WorkloadCharacteristics | null>(null);
+  const {
+    processes,
+    scenario,
+    seed,
+    processCount,
+    workload,
+    alpha,
+    loadScenario,
+    setProcessesList,
+    updateSettings,
+  } = useSimulation();
 
   // Manual process creation modal state
   const [showManualModal, setShowManualModal] = useState<boolean>(false);
@@ -33,47 +38,51 @@ export default function ProcessesPage() {
   const [manualPriority, setManualPriority] = useState<number>(3);
   const [manualType, setManualType] = useState<ProcessType>('CPU-bound');
   const [manualHistory, setManualHistory] = useState<string>('8, 11, 9, 10');
+  const [inputError, setInputError] = useState<string | null>(null);
 
-  useEffect(() => {
-    handleGenerate(10, 42, 'MIXED', 0.5);
-  }, []);
-
-  const handleGenerate = (
-    count = processCount, 
-    currentSeed = seed, 
-    currentScenario = scenario, 
-    currentAlpha = alpha
-  ) => {
-    const generated = generateProcesses({
-      count,
-      seed: currentSeed,
-      scenario: currentScenario,
-      alpha: currentAlpha,
-    });
-    setProcesses(generated);
-    setWorkload(analyzeWorkload(generated));
-  };
-
-  const handleScenarioChange = (sc: 'MIXED' | 'CPU_HEAVY' | 'INTERACTIVE' | 'STARVATION' | 'UNCERTAIN') => {
-    setScenario(sc);
-    handleGenerate(processCount, seed, sc, alpha);
+  const handleScenarioChange = (sc: WorkloadScenario) => {
+    loadScenario(sc, processCount, seed);
   };
 
   const handleAddManualProcess = (e: React.FormEvent) => {
     e.preventDefault();
+    setInputError(null);
+
     const pid = manualPid.trim() || `P${processes.length + 1}`;
+    if (manualArrival < 0) {
+      setInputError('Arrival time cannot be negative.');
+      return;
+    }
+    if (manualBurst <= 0) {
+      setInputError('Burst time must be greater than 0.');
+      return;
+    }
+    if (manualPriority <= 0) {
+      setInputError('Priority must be at least 1.');
+      return;
+    }
+
+    // Validate burst history
+    const historyParsed = manualHistory
+      .split(',')
+      .map(s => Number(s.trim()))
+      .filter(n => !isNaN(n) && n > 0);
+
+    const cleanHistory = historyParsed.length > 0 ? historyParsed.join(', ') : `${manualBurst}`;
+
     const newProcess = createManualProcess(
       pid,
       manualArrival,
       manualBurst,
       manualPriority,
       manualType,
-      manualHistory,
+      cleanHistory,
       alpha
     );
+
     const updated = [...processes, newProcess];
-    setProcesses(updated);
-    setWorkload(analyzeWorkload(updated));
+    setProcessesList(updated);
+
     setShowManualModal(false);
     setManualPid('');
     setManualArrival(0);
@@ -84,7 +93,7 @@ export default function ProcessesPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-3 sm:px-6 py-5 font-mono text-xs space-y-5">
-      {/* Header (Section 10) */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#21262d] gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -144,10 +153,7 @@ export default function ProcessesPage() {
             {[5, 10, 20, 50].map((c) => (
               <button
                 key={c}
-                onClick={() => {
-                  setProcessCount(c);
-                  handleGenerate(c, seed, scenario, alpha);
-                }}
+                onClick={() => loadScenario(scenario, c, seed)}
                 className={`px-2 py-0.5 font-bold ${
                   processCount === c
                     ? 'bg-amber-500 text-black'
@@ -166,8 +172,7 @@ export default function ProcessesPage() {
                 value={seed}
                 onChange={(e) => {
                   const s = parseInt(e.target.value) || 0;
-                  setSeed(s);
-                  handleGenerate(processCount, s, scenario, alpha);
+                  loadScenario(scenario, processCount, s);
                 }}
                 className="w-12 bg-transparent text-amber-400 font-bold focus:outline-hidden text-[10px]"
               />
@@ -175,7 +180,7 @@ export default function ProcessesPage() {
           </div>
         </div>
 
-        {/* Workload Profile Section (Section 15) */}
+        {/* Workload Profile Section */}
         {workload && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1 text-[10px]">
             <div className="p-2 bg-[#0d0f12] border border-[#21262d]">
@@ -207,7 +212,7 @@ export default function ProcessesPage() {
             </div>
 
             <div className="p-2 bg-[#0d0f12] border border-[#21262d]">
-              <span className="text-[#6e7681] block uppercase text-[9px]">PREDICTION CONFIDENCE</span>
+              <span className="text-[#6e7681] block uppercase text-[9px]">PREDICTION RELIABILITY</span>
               <span className="text-emerald-400 font-bold text-xs">
                 {workload.burstVariance > 40 ? '68%' : '84%'} EST.
               </span>
@@ -237,6 +242,13 @@ export default function ProcessesPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {inputError && (
+              <div className="p-2 bg-rose-950/40 border border-rose-500/50 text-rose-300 flex items-center gap-1.5 text-[11px]">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>{inputError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleAddManualProcess} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">

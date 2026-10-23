@@ -3,12 +3,21 @@
 import React, { useState } from 'react';
 import { ObjectiveWeights } from '../../lib/types';
 import { DEFAULT_OBJECTIVE_WEIGHTS } from '../../lib/scheduler/smartScheduler';
-import { RotateCcw, Check, Sliders } from 'lucide-react';
+import { useSimulation } from '../../context/SimulationContext';
+import { RotateCcw, Check, Sliders, AlertTriangle, Scale } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [weights, setWeights] = useState<ObjectiveWeights>(DEFAULT_OBJECTIVE_WEIGHTS);
-  const [agingThreshold, setAgingThreshold] = useState<number>(10);
-  const [alpha, setAlpha] = useState<number>(0.5);
+  const {
+    weights: contextWeights,
+    agingThreshold: contextAging,
+    alpha: contextAlpha,
+    updateWeights,
+    updateSettings,
+  } = useSimulation();
+
+  const [weights, setWeights] = useState<ObjectiveWeights>(contextWeights);
+  const [agingThreshold, setAgingThreshold] = useState<number>(contextAging);
+  const [alpha, setAlpha] = useState<number>(contextAlpha);
   const [savedNotice, setSavedNotice] = useState<boolean>(false);
 
   const totalWeight = Math.round(
@@ -20,6 +29,8 @@ export default function SettingsPage() {
       weights.contextSwitches) * 100
   );
 
+  const isValid = totalWeight === 100;
+
   const handleWeightChange = (key: keyof ObjectiveWeights, val: number) => {
     setWeights(prev => ({
       ...prev,
@@ -27,18 +38,48 @@ export default function SettingsPage() {
     }));
   };
 
+  const handleNormalize = () => {
+    const rawSum = weights.waitingTime + weights.responseTime + weights.turnaroundTime + weights.cpuUtilization + weights.fairness + weights.contextSwitches;
+    if (rawSum === 0) {
+      setWeights(DEFAULT_OBJECTIVE_WEIGHTS);
+      return;
+    }
+    const factor = 1.0 / rawSum;
+    const nw: ObjectiveWeights = {
+      waitingTime: Number((weights.waitingTime * factor).toFixed(2)),
+      responseTime: Number((weights.responseTime * factor).toFixed(2)),
+      turnaroundTime: Number((weights.turnaroundTime * factor).toFixed(2)),
+      cpuUtilization: Number((weights.cpuUtilization * factor).toFixed(2)),
+      fairness: Number((weights.fairness * factor).toFixed(2)),
+      contextSwitches: Number((weights.contextSwitches * factor).toFixed(2)),
+    };
+    // Ensure exact 1.00 sum
+    const newSum = Math.round((nw.waitingTime + nw.responseTime + nw.turnaroundTime + nw.cpuUtilization + nw.fairness + nw.contextSwitches) * 100);
+    const diff = 100 - newSum;
+    if (diff !== 0) {
+      nw.waitingTime = Number((nw.waitingTime + diff / 100).toFixed(2));
+    }
+    setWeights(nw);
+  };
+
   const handleReset = () => {
     setWeights(DEFAULT_OBJECTIVE_WEIGHTS);
     setAgingThreshold(10);
     setAlpha(0.5);
+    updateWeights(DEFAULT_OBJECTIVE_WEIGHTS);
+    updateSettings({ agingThreshold: 10, alpha: 0.5 });
     setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2000);
+    setTimeout(() => setSavedNotice(false), 2500);
   };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValid) return;
+
+    updateWeights(weights);
+    updateSettings({ agingThreshold, alpha });
     setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2000);
+    setTimeout(() => setSavedNotice(false), 2500);
   };
 
   return (
@@ -66,6 +107,26 @@ export default function SettingsPage() {
         </button>
       </div>
 
+      {!isValid && (
+        <div className="p-3 bg-rose-950/40 border border-rose-500/60 text-rose-300 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+            <div>
+              <span className="font-bold uppercase tracking-wider">INVALID CONFIGURATION:</span>
+              <span className="ml-1 text-[11px]">Weights must sum to exactly 100% (Currently {totalWeight}%). Commit is disabled until resolved.</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleNormalize}
+            className="flex items-center gap-1 px-2.5 py-1 bg-rose-900/60 hover:bg-rose-800 text-rose-200 border border-rose-500 font-bold uppercase text-[10px] shrink-0"
+          >
+            <Scale className="h-3 w-3" />
+            AUTO-NORMALIZE (100%)
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSave} className="space-y-4">
         {/* Multi-Objective Weights */}
         <div className="bg-[#13171d] border border-[#21262d] p-4 shadow-xl space-y-4">
@@ -78,13 +139,22 @@ export default function SettingsPage() {
                 DETERMINES UTILITY SCORE RANKING AMONG CANDIDATE SCHEDULING POLICIES
               </span>
             </div>
-            <span className={`px-2 py-0.5 font-bold border text-[10px] ${
-              totalWeight === 100 
-                ? 'bg-emerald-950/50 text-emerald-400 border-emerald-500/50' 
-                : 'bg-amber-950/50 text-amber-400 border-amber-500/50'
-            }`}>
-              TOTAL WEIGHT: {totalWeight}%
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleNormalize}
+                className="px-2 py-0.5 bg-[#161b22] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-[10px] uppercase font-bold"
+              >
+                NORMALIZE
+              </button>
+              <span className={`px-2 py-0.5 font-bold border text-[10px] ${
+                isValid 
+                  ? 'bg-emerald-950/50 text-emerald-400 border-emerald-500/50' 
+                  : 'bg-rose-950/50 text-rose-400 border-rose-500/50'
+              }`}>
+                TOTAL: {totalWeight}%
+              </span>
+            </div>
           </div>
 
           <div className="space-y-3.5">
@@ -252,7 +322,8 @@ export default function SettingsPage() {
           </div>
           <button
             type="submit"
-            className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase tracking-wider transition-colors"
+            disabled={!isValid}
+            className="px-5 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider transition-colors"
           >
             COMMIT CONFIGURATION
           </button>

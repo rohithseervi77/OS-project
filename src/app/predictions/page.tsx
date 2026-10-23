@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Process } from '../../lib/types';
-import { generateProcesses } from '../../lib/workload/generator';
+import { useSimulation } from '../../context/SimulationContext';
 import { analyzeBurstHistory, DetailedProcessPrediction } from '../../lib/prediction/history';
 import { 
   ResponsiveContainer, 
@@ -11,39 +10,61 @@ import {
   XAxis, 
   YAxis, 
   Tooltip, 
-  CartesianGrid, 
-  Legend 
+  CartesianGrid 
 } from 'recharts';
-import { Play, RotateCcw, Cpu, Activity, Sliders } from 'lucide-react';
+import { AlertCircle, Sliders, Play } from 'lucide-react';
 
 export default function PredictionsPage() {
-  const [processes, setProcesses] = useState<Process[]>([]);
+  const { processes, alpha: contextAlpha, updateSettings } = useSimulation();
+
+  const [alpha, setAlpha] = useState<number>(contextAlpha);
   const [selectedPid, setSelectedPid] = useState<string>('P1');
-  const [alpha, setAlpha] = useState<number>(0.5);
 
   // Interactive Testbench state
   const [testbenchInput, setTestbenchInput] = useState<string>('5, 7, 6, 8, 9, 12, 14');
   const [testbenchResult, setTestbenchResult] = useState<DetailedProcessPrediction | null>(null);
+  const [inputError, setInputError] = useState<string | null>(null);
 
   useEffect(() => {
-    const procs = generateProcesses({ count: 10, seed: 42, scenario: 'MIXED' });
-    setProcesses(procs);
-    setSelectedPid(procs[0]?.pid || 'P1');
-    runTestbench('5, 7, 6, 8, 9, 12, 14', 0.5);
+    runTestbench('5, 7, 6, 8, 9, 12, 14', alpha);
   }, []);
 
   const runTestbench = (inputStr: string, currentAlpha: number) => {
-    const numbers = inputStr
-      .split(',')
-      .map(s => Number(s.trim()))
-      .filter(n => !isNaN(n) && n > 0);
-    if (numbers.length > 0) {
-      setTestbenchResult(analyzeBurstHistory(numbers, currentAlpha));
+    setInputError(null);
+    const rawTokens = inputStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    
+    if (rawTokens.length === 0) {
+      setInputError('Input sequence cannot be empty. Please enter positive burst numbers.');
+      return;
     }
+
+    const validNumbers: number[] = [];
+    let rejectedCount = 0;
+
+    for (const token of rawTokens) {
+      const n = Number(token);
+      if (!isNaN(n) && n > 0) {
+        validNumbers.push(n);
+      } else {
+        rejectedCount++;
+      }
+    }
+
+    if (validNumbers.length === 0) {
+      setInputError('Invalid input: All entries were non-numeric or <= 0. CPU bursts must be positive numbers (> 0).');
+      return;
+    }
+
+    if (rejectedCount > 0) {
+      setInputError(`Notice: ${rejectedCount} invalid/non-positive value(s) were excluded from evaluation.`);
+    }
+
+    setTestbenchResult(analyzeBurstHistory(validNumbers, currentAlpha));
   };
 
   const handleAlphaChange = (newAlpha: number) => {
     setAlpha(newAlpha);
+    updateSettings({ alpha: newAlpha });
     runTestbench(testbenchInput, newAlpha);
   };
 
@@ -52,10 +73,10 @@ export default function PredictionsPage() {
     runTestbench(testbenchInput, alpha);
   };
 
-  // Selected process analysis
+  // Selected process analysis from current active processes
   const selectedProcess = processes.find(p => p.pid === selectedPid) || processes[0];
-  const processAnalysis = selectedProcess 
-    ? analyzeBurstHistory(selectedProcess.burstHistory, alpha) 
+  const processAnalysis = selectedProcess && selectedProcess.burstHistory.length > 0
+    ? analyzeBurstHistory(selectedProcess.burstHistory, alpha)
     : null;
 
   // Active chart data: testbench result
@@ -67,13 +88,13 @@ export default function PredictionsPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-3 sm:px-6 py-5 font-mono text-xs space-y-5">
-      {/* Header (Section 12) */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#21262d] gap-3">
         <div>
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-none bg-amber-500" />
             <h1 className="text-base font-bold text-[#f3f4f6] uppercase tracking-wider">
-              BURST LAB // MATHEMATICAL PREDICTION WORKSTATION
+              BURST LAB // HISTORICAL BURST SEQUENCE ANALYSIS
             </h1>
           </div>
           <p className="text-xs text-[#8b949e] mt-0.5 font-sans">
@@ -118,22 +139,22 @@ export default function PredictionsPage() {
             Error = |t(n) − τ(n)| / t(n) × 100
           </span>
           <span className="text-[9px] text-[#8b949e] block font-mono">
-            Divergence between predicted estimate and physical execution
+            Divergence between predicted estimate and execution burst
           </span>
         </div>
 
         <div className="p-3 bg-[#13171d] border border-[#21262d] space-y-1">
-          <span className="text-[9px] text-[#6e7681] uppercase font-bold block">CONFIDENCE METRIC</span>
+          <span className="text-[9px] text-[#6e7681] uppercase font-bold block">PREDICTION RELIABILITY SCORE</span>
           <span className="text-sm font-bold text-emerald-400 block font-mono">
-            Confidence = max(0, 100 − Error)
+            Reliability = max(0, 100 − Error)
           </span>
           <span className="text-[9px] text-[#8b949e] block font-mono">
-            Standard mathematical reliability measurement
+            Empirical reliability metric bounded to [0, 100]%
           </span>
         </div>
       </div>
 
-      {/* Interactive Prediction Testbench (Section 13) */}
+      {/* Interactive Prediction Testbench */}
       <div className="bg-[#13171d] border border-[#21262d] p-4 space-y-4 shadow-xl">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#21262d] pb-3 gap-2">
           <div>
@@ -162,6 +183,13 @@ export default function PredictionsPage() {
           </form>
         </div>
 
+        {inputError && (
+          <div className="p-2 bg-amber-950/40 border border-amber-500/50 text-amber-300 flex items-center gap-1.5 text-[11px]">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            <span>{inputError}</span>
+          </div>
+        )}
+
         {/* Telemetry Metrics for Testbench */}
         {testbenchResult && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[10px]">
@@ -176,7 +204,7 @@ export default function PredictionsPage() {
             </div>
 
             <div className="p-2.5 bg-[#0d0f12] border border-[#21262d]">
-              <span className="text-[#6e7681] block uppercase text-[9px]">MEASURED CONFIDENCE</span>
+              <span className="text-[#6e7681] block uppercase text-[9px]">PREDICTION RELIABILITY</span>
               <span className="text-base font-bold text-emerald-400">{testbenchResult.overallConfidence}%</span>
             </div>
 
@@ -239,7 +267,7 @@ export default function PredictionsPage() {
         {testbenchResult && (
           <div className="border border-[#21262d] bg-[#0d0f12] overflow-x-auto">
             <div className="p-2 border-b border-[#21262d] bg-[#0e1116] text-[10px] text-[#8b949e] font-bold uppercase">
-              MATHEMATICAL TRACE // EXECUTION SEQUENCE TABLE
+              MATHEMATICAL TRACE // HISTORICAL BURST SEQUENCE ANALYSIS
             </div>
             <table className="w-full text-left text-xs border-collapse">
               <thead>
@@ -250,7 +278,7 @@ export default function PredictionsPage() {
                   <th className="py-2 px-3">NEW PREDICTION τ(n+1)</th>
                   <th className="py-2 px-3">ABS ERROR |t - τ|</th>
                   <th className="py-2 px-3">PERCENT ERROR</th>
-                  <th className="py-2 px-3 text-right">CONFIDENCE</th>
+                  <th className="py-2 px-3 text-right">RELIABILITY</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1c2128] font-mono text-[10px]">

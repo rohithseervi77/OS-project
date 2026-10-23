@@ -28,7 +28,7 @@ jobs:
         npx prisma generate
         npx prisma db push
 
-    - name: Run Master Unit Test Suite (24 Tests)
+    - name: Run Master Unit Test Suite & Audit Invariants (30 Tests)
       run: npm test
 
     - name: Build Next.js Production Application

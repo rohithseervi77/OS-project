@@ -12,9 +12,11 @@ try {
   require('./phase4.test');
   console.log('\n--------------------------------------------------------\n');
   require('./phase5_6_7.test');
+  console.log('\n--------------------------------------------------------\n');
+  require('./auditInvariants.test');
 
   console.log('\n========================================================');
-  console.log('  ALL TEST PHASES PASSED WITH 100% SUCCESS! (24/24)     ');
+  console.log('  ALL TEST PHASES & AUDIT INVARIANTS PASSED! (30/30)    ');
   console.log('========================================================');
 } catch (err) {
   console.error('\n❌ TEST SUITE FAILURE:', err);
